@@ -1,0 +1,10 @@
+# .gitignore
+__pycache__/
+*.pyc
+.env
+.streamlit/secrets.toml
+equipe.db
+*.db
+.regras.json.swp
+.DS_Store
+config/regras.json
