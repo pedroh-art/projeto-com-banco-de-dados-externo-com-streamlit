@@ -1,0 +1,233 @@
+{
+  "titulo": "Estrutura Organizacional da Equipe FLL",
+  "setores": [
+    {
+      "nome": "Computação e Robótica",
+      "capacidade": 4,
+      "funcoes": [
+        {
+          "nome": "Programador do Robô",
+          "max": 1,
+          "responsabilidades": [
+            "Desenvolver códigos para o robô executar as missões.",
+            "Ajustar parâmetros de velocidade, precisão e rota.",
+            "Testar e corrigir erros durante os treinos no tapete."
+          ]
+        },
+        {
+          "nome": "Engenheiro de Construção",
+          "max": 2,
+          "responsabilidades": [
+            "Montar e otimizar o robô de acordo com as missões.",
+            "Criar acessórios eficientes e resistentes.",
+            "Fazer manutenção estrutural do robô."
+          ]
+        },
+        {
+          "nome": "Analista de Estratégia de Missões",
+          "max": 1,
+          "responsabilidades": [
+            "Definir a ordem ideal das missões.",
+            "Calcular tempo, risco e pontuação.",
+            "Apoiar programadores e engenheiros nas decisões."
+          ]
+        },
+        {
+          "nome": "Pesquisador Tecnológico",
+          "max": 1,
+          "responsabilidades": [
+            "Pesquisar novas soluções técnicas e mecanismos.",
+            "Estudar conceitos de engenharia aplicáveis ao robô.",
+            "Apoiar no desenvolvimento de protótipos do PI."
+          ]
+        }
+      ],
+      "direitos": [
+        "Acesso prioritário aos computadores.",
+        "Acesso ao Hub, motores e sensores.",
+        "Uso de softwares e arquivos do robô.",
+        "Prioridade no uso do tapete para testes."
+      ],
+      "direitos_exclusivos": [
+        "Acesso prioritário aos computadores.",
+        "Acesso ao Hub, motores e sensores.",
+        "Uso de softwares e arquivos do robô.",
+        "Prioridade no uso do tapete para testes."
+      ]
+    },
+    {
+      "nome": "Projeto de Inovação (PI)",
+      "capacidade": 6,
+      "funcoes": [
+        {
+          "nome": "Pesquisador",
+          "max": 2,
+          "responsabilidades": [
+            "Realizar pesquisas científicas para o PI.",
+            "Buscar fontes confiáveis e entrevistas reais.",
+            "Analisar dados e transformar em informações úteis."
+          ]
+        },
+        {
+          "nome": "Designer da Solução",
+          "max": 2,
+          "responsabilidades": [
+            "Criar o conceito visual e funcional da solução.",
+            "Ajudar a transformar ideias em protótipos reais.",
+            "Montar diagramas, fluxos e representações visuais."
+          ]
+        },
+        {
+          "nome": "Apresentador Principal",
+          "max": 1,
+          "responsabilidades": [
+            "Ser o responsável por falar durante a apresentação.",
+            "Treinar dicção, postura e segurança.",
+            "Guiar os outros membros durante a fala."
+          ]
+        },
+        {
+          "nome": "Escritor do Roteiro",
+          "max": 1,
+          "responsabilidades": [
+            "Criar o roteiro completo da apresentação.",
+            "Organizar falas, transições e cenas.",
+            "Garantir que o conteúdo esteja dentro do tempo."
+          ]
+        }
+      ],
+      "direitos": [
+        "Acesso ao espaço de entrevistas e pesquisa.",
+        "Acesso aos documentos e materiais do PI.",
+        "Prioridade no uso de materiais para prototipagem."
+      ],
+      "direitos_exclusivos": [
+        "Acesso ao espaço de entrevistas e pesquisa.",
+        "Acesso aos documentos e materiais do PI.",
+        "Prioridade no uso de materiais para prototipagem."
+      ]
+    },
+    {
+      "nome": "Organização, Logística e Documentação",
+      "capacidade": 4,
+      "funcoes": [
+        {
+          "nome": "Gerente de Tempo",
+          "max": 1,
+          "responsabilidades": [
+            "Organizar o cronograma de treinos.",
+            "Garantir pontualidade nas atividades.",
+            "Lembrar prazos importantes da FLL."
+          ]
+        },
+        {
+          "nome": "Responsável pela Documentação",
+          "max": 1,
+          "responsabilidades": [
+            "Organizar arquivos, atas e registros.",
+            "Registrar decisões e atualizações importantes.",
+            "Armazenar documentos do PI e da robótica."
+          ]
+        },
+        {
+          "nome": "Responsável pelos Materiais",
+          "max": 1,
+          "responsabilidades": [
+            "Controlar inventário completo de peças e equipamentos.",
+            "Organizar armários e caixas.",
+            "Garantir que nada seja perdido ou danificado."
+          ]
+        },
+        {
+          "nome": "Sr. core values",
+          "max": 1,
+          "responsabilidades": [
+            "Promover os valores da equipe: Garantir que todos pratiquem e respeitem os valores centrais.",
+            "Orientar e mentorar: Ajudar membros a alinhar atitudes e decisões aos valores do time.",
+            "Melhorar a cultura: Identificar gaps e propor ações para fortalecer a colaboração e o engajamento."
+          ]
+        }
+      ],
+      "direitos": [
+        "Controle total dos materiais e inventário.",
+        "Acesso às listas de controle e checklists.",
+        "Autorização para organizar armários e caixas."
+      ],
+      "direitos_exclusivos": [
+        "Controle total dos materiais e inventário.",
+        "Acesso às listas de controle e checklists.",
+        "Autorização para organizar armários e caixas."
+      ]
+    },
+    {
+      "nome": "Marketing e Apresentação",
+      "capacidade": 4,
+      "funcoes": [
+        {
+          "nome": "Designer do Uniforme",
+          "max": 1,
+          "responsabilidades": [
+            "Criar arte final da camisa da equipe.",
+            "Escolher cores, fontes e símbolos.",
+            "Colaborar com o setor de marketing."
+          ]
+        },
+        {
+          "nome": "Gestor das Redes Sociais",
+          "max": 2,
+          "responsabilidades": [
+            "Gerenciar perfis oficiais da equipe.",
+            "Criar postagens e divulgar projetos.",
+            "Interagir com o público e parceiros."
+          ]
+        },
+        {
+          "nome": "Criador de Slides e Vídeos",
+          "max": 1,
+          "responsabilidades": [
+            "Montar slides da apresentação oficial.",
+            "Editar vídeos da equipe e do projeto.",
+            "Criar conteúdo visual com qualidade."
+          ]
+        },
+        {
+          "nome": "Treinador de Oratória",
+          "max": 1,
+          "responsabilidades": [
+            "Treinar os membros para falar melhor.",
+            "Ajudar a controlar nervosismo e postura.",
+            "Realizar ensaios e feedbacks constantes."
+          ]
+        }
+      ],
+      "direitos": [
+        "Acesso aos arquivos visuais e identidades de marca.",
+        "Controle das redes sociais da equipe.",
+        "Acesso ao computador para edição de vídeos e slides."
+      ],
+      "direitos_exclusivos": [
+        "Acesso aos arquivos visuais e identidades de marca.",
+        "Controle das redes sociais da equipe.",
+        "Acesso ao computador para edição de vídeos e slides."
+      ]
+    }
+  ],
+  "direitos_gerais": [
+    "Participar das decisões gerais da equipe.",
+    "Acesso completo ao Projeto de Inovação.",
+    "Uso de materiais simples como papel, canetas e quadros.",
+    "Direito de opinar e sugerir ideias em todas as áreas.",
+    "Participar dos treinos de apresentação."
+  ],
+  "regras_gerais": [
+    "Todos devem colaborar no Projeto de Inovação, mesmo que seu setor não seja o líder.",
+    "As funções podem ser trocadas somente com aprovação da equipe.",
+    "Cada membro deve respeitar os recursos exclusivos dos outros setores.",
+    "As decisões importantes devem sempre envolver toda a equipe."
+  ],
+  "por_que": {
+    "pi": "O Projeto de Inovação (PI) é coletivo e envolve criatividade, pesquisa e tomada de decisões. Todos devem participar.",
+    "setores": "Setores técnicos possuem recursos limitados e sensíveis. Definir responsáveis evita bagunça, erros e atrasos."
+  },
+  "limite_total_membros": 6
+}
