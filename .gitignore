@@ -7,5 +7,4 @@ equipe.db
 *.db
 .regras.json.swp
 .DS_Store
-config/regras.json
 teste.py
