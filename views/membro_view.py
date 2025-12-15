@@ -127,7 +127,7 @@ def render_membro_view(conn, regras, usuario_logado):
     for col, status, titulo_col in zip(
         [col_a_fazer, col_fazendo, col_feito],
         ["to_do", "doing", "done"],
-        ["<tool_call> A Fazer", "🔄 Fazendo", "✅ Feito"]
+        ["📝 A Fazer", "🔄 Fazendo", "✅ Feito"]
     ):
         with col:
             st.markdown(f"#### {titulo_col}")

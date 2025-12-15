@@ -61,14 +61,12 @@ def render_admin_view(conn, regras):
                     else:
                         st.info("Nenhum direito exclusivo definido para este setor.")
                     try:
-                        c = conn.cursor()
-                        atribs = c.execute("""
-                            SELECT i.nome, a.funcao
-                            FROM atribuicoes a
-                            JOIN integrantes i ON i.id = a.integrante_id
-                            WHERE a.setor = ?
-                            ORDER BY i.nome
-                        """, (setor["nome"],)).fetchall()
+                        res = conn.table("atribuicoes").select("funcao, integrantes(nome)").eq("setor", setor["nome"]).order("integrantes(nome)").execute()
+                        atribs = []
+                        if res.data:
+                            for item in res.data:
+                                nome_integrante = item.get("integrantes", {}).get("nome") if item.get("integrantes") else "Desconhecido"
+                                atribs.append((nome_integrante, item["funcao"]))
                     except Exception as e:
                         st.error(f"Erro ao carregar membros do setor: {e}")
                         atribs = []
@@ -409,7 +407,7 @@ def render_admin_view(conn, regras):
         for col, status, titulo_col in zip(
             [col_a_fazer, col_fazendo, col_feito],
             ["to_do", "doing", "done"],
-            ["<tool_call> A Fazer", "🔄 Fazendo", "✅ Feito"]
+            ["📝 A Fazer", "🔄 Fazendo", "✅ Feito"]
         ):
             with col:
                 st.markdown(f"### {titulo_col}")
@@ -451,7 +449,8 @@ def render_admin_view(conn, regras):
                                         st.rerun()
         st.markdown("---")
         st.subheader("📤 Enviar Quadro via Pushbullet")
-        token = st.text_input("Digite seu token do Pushbullet", type="password", key="push_token")
+        st.link_button("Pegue seu token aqui", "https://www.pushbullet.com/#settings/account", icon="🔗")
+        token = st.text_input(f"Digite seu token do Pushbullet", type="password", key="push_token")
         if st.button("📤 Enviar Quadro Atual", key="push_enviar"):
             tarefas_kanban = obter_quadro_kanban(conn)
             if not tarefas_kanban:

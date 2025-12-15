@@ -1,58 +1,50 @@
 # models/tarefa.py
-import sqlite3
 
 def criar_tarefa(conn, titulo, descricao, integrante_id, status="to_do"):
     try:
-        c = conn.cursor()
-        c.execute("""
-            INSERT INTO tarefas (titulo, descricao, status, integrante_id)
-            VALUES (?, ?, ?, ?)
-        """, (titulo.strip(), descricao.strip(), status, integrante_id))
-        conn.commit()
+        conn.table("tarefas").insert({
+            "titulo": titulo.strip(),
+            "descricao": descricao.strip(),
+            "status": status,
+            "integrante_id": integrante_id
+        }).execute()
         return True
     except Exception as e:
         raise e
 
 def atualizar_status_tarefa(conn, tarefa_id, novo_status):
     try:
-        c = conn.cursor()
-        c.execute("UPDATE tarefas SET status = ? WHERE id = ?", (novo_status, tarefa_id))
-        conn.commit()
+        conn.table("tarefas").update({"status": novo_status}).eq("id", tarefa_id).execute()
         return True
     except Exception as e:
         raise e
 
 def excluir_tarefa(conn, tarefa_id):
     try:
-        c = conn.cursor()
-        c.execute("DELETE FROM tarefas WHERE id = ?", (tarefa_id,))
-        conn.commit()
+        conn.table("tarefas").delete().eq("id", tarefa_id).execute()
         return True
     except Exception as e:
         raise e
 
 def listar_tarefas_por_status(conn, status):
     try:
-        c = conn.cursor()
-        return c.execute("""
-            SELECT t.id, t.titulo, t.descricao, t.integrante_id, i.nome
-            FROM tarefas t
-            LEFT JOIN integrantes i ON i.id = t.integrante_id
-            WHERE t.status = ?
-            ORDER BY t.data_criacao
-        """, (status,)).fetchall()
+        # Supabase faz o join automaticamente se as chaves estrangeiras estiverem configuradas
+        res = conn.table("tarefas").select("id, titulo, descricao, integrante_id, integrantes(nome)").eq("status", status).order("data_criacao").execute()
+        tarefas = []
+        for item in res.data:
+            nome_integrante = item["integrantes"]["nome"] if item["integrantes"] else "Não atribuído"
+            tarefas.append((item["id"], item["titulo"], item["descricao"], item["integrante_id"], nome_integrante))
+        return tarefas
     except Exception as e:
         raise e
 
 def obter_quadro_kanban(conn):
     try:
-        c = conn.cursor()
-        c.execute("""
-            SELECT t.status, t.titulo, t.descricao, i.nome
-            FROM tarefas t
-            LEFT JOIN integrantes i ON i.id = t.integrante_id
-            ORDER BY t.status, t.data_criacao
-        """)
-        return c.fetchall()
+        res = conn.table("tarefas").select("status, titulo, descricao, integrantes(nome)").order("status").order("data_criacao").execute()
+        quadro = []
+        for item in res.data:
+            nome_integrante = item["integrantes"]["nome"] if item["integrantes"] else "Não atribuído"
+            quadro.append((item["status"], item["titulo"], item["descricao"], nome_integrante))
+        return quadro
     except Exception as e:
         raise e

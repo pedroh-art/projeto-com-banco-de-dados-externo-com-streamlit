@@ -1,32 +1,31 @@
 # auth.py
 import streamlit as st
-import sqlite3
 import bcrypt
+from database import supabase
 
-def login_usuario(conn, usuario, senha):
-    """
-    Autentica um usuário no banco de dados.
-    Retorna (usuario, tipo) ou None se inválido.
-    """
+def login_usuario(usuario, senha):
     try:
-        c = conn.cursor()
-        c.execute("SELECT usuario, tipo, senha FROM usuarios WHERE usuario = ?", (usuario,))
-        resultado = c.fetchone()
-        if resultado:
-            usuario_db, tipo, senha_hash = resultado
-            if bcrypt.checkpw(senha.encode('utf-8'), senha_hash):
-                return (usuario_db, tipo)
-        return None
+        res = supabase.table("usuarios").select("*").eq("usuario", usuario).execute()
+        if not res.data:
+            return None
+        
+        user = res.data[0]
+
+        # Garante que 'user' é um dicionário e tem a chave 'senha' antes de usar.
+        if isinstance(user, dict) and "senha" in user:
+            stored_hash = user["senha"].encode('latin1')
+            if bcrypt.checkpw(senha.encode('utf-8'), stored_hash):
+                return (user.get("usuario"), user.get("tipo"))
+        
+        return None # Retorna None se o usuário não for encontrado ou a senha estiver incorreta.
     except Exception as e:
-        st.error(f"Erro ao fazer login: {e}")
+        st.error(f"Erro no login: {e}")
         return None
 
 def initialize_session_state():
-    """Inicializa as variáveis de sessão do Streamlit."""
     if "usuario_logado" not in st.session_state:
         st.session_state.usuario_logado = None
         st.session_state.tipo_usuario = None
 
 def is_admin():
-    """Verifica se o usuário logado é administrador."""
     return st.session_state.tipo_usuario == "administrador"

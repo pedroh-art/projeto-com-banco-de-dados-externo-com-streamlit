@@ -25,7 +25,7 @@ def enviar_kanban_pushbullet(tarefas, token):
 
         msg = "📋 **Quadro Kanban - Dino-Tech**\n\n"
         nomes_colunas = {
-            "to_do": "<tool_call> A Fazer",
+            "to_do": "📝 A Fazer",
             "doing": "🔄 Fazendo",
             "done": "✅ Feito"
         }

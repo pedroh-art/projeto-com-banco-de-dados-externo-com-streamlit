@@ -1,24 +1,22 @@
 # models/integrante.py
-import sqlite3
 import bcrypt
 import secrets
 import string
+
 def cadastrar_integrante(conn, nome):
     try:
         nome = nome.strip()
         if not nome:
             raise ValueError("O nome não pode estar vazio.")
-        c = conn.cursor()
-        c.execute("INSERT OR IGNORE INTO integrantes (nome) VALUES (?)", (nome,))
-        conn.commit()
+        conn.table("integrantes").insert({"nome": nome}).execute()
         return True
     except Exception as e:
         raise e
 
 def listar_integrantes(conn):
     try:
-        c = conn.cursor()
-        return c.execute("SELECT id, nome FROM integrantes ORDER BY nome").fetchall()
+        res = conn.table("integrantes").select("id, nome").order("nome").execute()
+        return [(item['id'], item['nome']) for item in res.data]
     except Exception as e:
         raise e
 
@@ -42,114 +40,94 @@ def cadastrar_login_membro(conn, nome):
     senha_hash = bcrypt.hashpw(senha.encode('utf-8'), bcrypt.gensalt())
     
     try:
-        c = conn.cursor()
         # Verifica se o usuário já existe
-        c.execute("SELECT 1 FROM usuarios WHERE usuario = ?", (usuario,))
-        if c.fetchone():
+        res = conn.table("usuarios").select("id", count='exact').eq("usuario", usuario).execute()
+        if res.count > 0:
             print(f"⚠️ Usuário '{usuario}' já existe. Login NÃO criado.")
             return None, None
         
         # Insere o novo usuário
-        c.execute(
-            "INSERT INTO usuarios (usuario, senha, tipo) VALUES (?, ?, ?)",
-            (usuario, senha_hash, "membro")
-        )
-        conn.commit()
+        conn.table("usuarios").insert({"usuario": usuario, "senha": senha_hash.decode('latin1'), "tipo": "membro"}).execute()
         print(f"✅ Login criado: {usuario} | Senha: {senha}")
         return usuario, senha  # retorna a senha forte gerada
         
-    except sqlite3.IntegrityError as e:
-        print(f"❌ Erro de integridade ao criar login '{usuario}': {e}")
-        return None, None
     except Exception as e:
         print(f"❌ Erro inesperado ao criar login '{usuario}': {e}")
         raise
 def atribuir_setor_funcao(conn, integrante_id, setor, funcao):
     try:
-        c = conn.cursor()
-        c.execute("INSERT INTO atribuicoes (integrante_id, setor, funcao) VALUES (?, ?, ?)",
-                  (integrante_id, setor, funcao))
-        conn.commit()
-        return True
-    except sqlite3.IntegrityError:
+        conn.table("atribuicoes").insert({
+            "integrante_id": integrante_id, "setor": setor, "funcao": funcao
+        }).execute()
         return True
     except Exception as e:
         raise e
 
 def listar_atribuicoes(conn, integrante_id):
     try:
-        c = conn.cursor()
-        return c.execute("SELECT setor, funcao FROM atribuicoes WHERE integrante_id=?", (integrante_id,)).fetchall()
+        res = conn.table("atribuicoes").select("setor, funcao").eq("integrante_id", integrante_id).execute()
+        return [(item['setor'], item['funcao']) for item in res.data]
     except Exception as e:
         raise e
 
 def remover_atribuicao(conn, integrante_id, setor, funcao):
     try:
-        c = conn.cursor()
-        c.execute("DELETE FROM atribuicoes WHERE integrante_id=? AND setor=? AND funcao=?",
-                  (integrante_id, setor, funcao))
-        conn.commit()
+        conn.table("atribuicoes").delete().match(
+            {"integrante_id": integrante_id, "setor": setor, "funcao": funcao}
+        ).execute()
         return True
     except Exception as e:
         raise e
 
 def remover_integrante_completo(conn, integrante_id):
-    """
-    Remove o integrante e seu login associado (tabela 'usuarios').
-    """
+    """Remove o integrante e seu login associado (tabela 'usuarios')."""
     try:
-        c = conn.cursor()
-        
         # Primeiro, obtém o nome do integrante para encontrar o usuário
-        c.execute("SELECT nome FROM integrantes WHERE id = ?", (integrante_id,))
-        resultado = c.fetchone()
-        if not resultado:
+        res = conn.table("integrantes").select("nome").eq("id", integrante_id).maybe_single().execute()
+        if not res.data:
             return False
-        nome = resultado[0]
+        nome = res.data["nome"]
         usuario = nome.strip().replace(" ", "_").lower()
 
         # Remove da tabela 'atribuicoes' (opcional, mas recomendado)
-        c.execute("DELETE FROM atribuicoes WHERE integrante_id = ?", (integrante_id,))
+        conn.table("atribuicoes").delete().eq("integrante_id", integrante_id).execute()
         
         # Remove da tabela 'integrantes'
-        c.execute("DELETE FROM integrantes WHERE id = ?", (integrante_id,))
+        conn.table("integrantes").delete().eq("id", integrante_id).execute()
         
         # 🔥 Remove da tabela 'usuarios'
-        c.execute("DELETE FROM usuarios WHERE usuario = ?", (usuario,))
-        
-        conn.commit()
+        conn.table("usuarios").delete().eq("usuario", usuario).execute()
         return True
     except Exception as e:
         raise e
 
 def contar_atribuidos_por_funcao(conn, setor, funcao):
     try:
-        c = conn.cursor()
-        c.execute("SELECT COUNT(*) FROM atribuicoes WHERE setor = ? AND funcao = ?", (setor, funcao))
-        return c.fetchone()[0]
+        res = conn.table("atribuicoes").select("id", count='exact').eq("setor", setor).eq("funcao", funcao).execute()
+        return res.count
     except Exception as e:
         raise e
 
 def contar_total_integrantes(conn):
     try:
-        c = conn.cursor()
-        c.execute("SELECT COUNT(*) FROM integrantes")
-        return c.fetchone()[0]
+        res = conn.table("integrantes").select("id", count='exact').execute()
+        return res.count
     except Exception as e:
         raise e
 
 def contar_setores_unicos_por_integrante(conn, integrante_id):
     try:
-        c = conn.cursor()
-        c.execute("SELECT COUNT(DISTINCT setor) FROM atribuicoes WHERE integrante_id = ?", (integrante_id,))
-        return c.fetchone()[0]
+        res = conn.table("atribuicoes").select("setor").eq("integrante_id", integrante_id).execute()
+        if res.data:
+            # Conta os setores únicos no lado do cliente (Python)
+            return len({item['setor'] for item in res.data})
+        return 0
     except Exception as e:
         raise e
 
 def contar_total_funcoes_por_integrante(conn, integrante_id):
     try:
-        c = conn.cursor()
-        c.execute("SELECT COUNT(*) FROM atribuicoes WHERE integrante_id = ?", (integrante_id,))
-        return c.fetchone()[0]
+        res = conn.table("atribuicoes").select("id", count='exact').eq("integrante_id", integrante_id).execute()
+        return res.count
     except Exception as e:
         raise e
