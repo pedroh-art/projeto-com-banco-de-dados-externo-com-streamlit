@@ -17,10 +17,13 @@ from models.compromisso import (
 def render_membro_view(conn, regras, usuario_logado):
     # Configura o locale para português do Brasil para formatar as datas
     HORARIOS_PADRAO = [f"{h:02d}:00" for h in range(8, 20)]
+    import locale
+
     try:
         locale.setlocale(locale.LC_TIME, 'pt_BR.UTF-8')
     except locale.Error:
-        locale.setlocale(locale.LC_TIME, 'Portuguese_Brazil')
+        locale.setlocale(locale.LC_TIME, 'C')
+
 
     st.set_page_config(page_title="Dino-Tech - Painel do Membro", layout="wide")
     st.markdown("<h1 style='color:#4B0082; text-align:center;'>👤 Painel do Membro - Dino-Tech</h1>", unsafe_allow_html=True)
