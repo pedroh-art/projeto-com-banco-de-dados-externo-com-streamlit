@@ -1,7 +1,6 @@
 # views/admin_view.py
 import streamlit as st
 import datetime
-import locale
 import copy
 from collections import defaultdict
 from models.integrante import (
@@ -20,23 +19,18 @@ from models.compromisso import (
 )
 from services.regras_service import salvar_regras
 from utils.pushbullet_util import enviar_kanban_pushbullet
+from babel.dates import format_date
 import time
 # Horários padrão
 HORARIOS_PADRAO = [f"{h:02d}:00" for h in range(8, 20)]
 
 def render_admin_view(conn, regras):
-    # Configura o locale para português do Brasil para formatar as datas
-    try:
-        locale.setlocale(locale.LC_TIME, 'pt_BR.UTF-8')
-    except locale.Error:
-        locale.setlocale(locale.LC_TIME, 'Portuguese_Brazil')
-
     # Faz uma cópia profunda das regras no início para detectar mudanças
     regras_originais = copy.deepcopy(regras)
 
     st.set_page_config(page_title="Banco De Dados Da Dino-Tech", layout="wide")
     st.markdown(f"<h1 style='color:#FFD700; text-align:center;'>🚀 Banco De Dados Da Dino-Tech 🚀</h1>", unsafe_allow_html=True)
-    if st.button("recarregar página", key="regarrar_pagina_membro"):
+    if st.button("Recarregar página", key="recarregar_pagina_admin"):
         st.rerun()
     st.markdown(f"👤 Logado como: **{st.session_state.usuario_logado}** (administrador)")
     if st.button("🔒 Sair", key="sair_admin"):
@@ -480,7 +474,7 @@ def render_admin_view(conn, regras):
                 comp_por_data[data].append((cid, titulo, desc, inicio, fim))
             for data_str in sorted(comp_por_data.keys()):
                 data_obj = datetime.datetime.strptime(data_str, "%Y-%m-%d")
-                data_formatada = data_obj.strftime("%d de %B de %Y").capitalize()
+                data_formatada = format_date(data_obj, "d 'de' MMMM 'de' y", locale='pt_BR')
                 st.markdown(f"### 🗓️ {data_formatada}")
                 for cid, titulo, desc, inicio, fim in comp_por_data[data_str]:
                     with st.expander(f"📌 **{titulo}** — {inicio} a {fim}"):

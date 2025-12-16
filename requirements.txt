@@ -2,3 +2,4 @@ streamlit
 pushbullet.py
 bcrypt
 supabase
+Babel

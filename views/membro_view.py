@@ -1,7 +1,7 @@
 # views/membro_view.py
 import streamlit as st
 import datetime
-import locale
+from babel.dates import format_date
 from collections import defaultdict
 from models.integrante import listar_integrantes, listar_atribuicoes
 from models.tarefa import listar_tarefas_por_status
@@ -17,6 +17,7 @@ from models.compromisso import (
 def render_membro_view(conn, regras, usuario_logado):
     # Configura o locale para português do Brasil para formatar as datas
     HORARIOS_PADRAO = [f"{h:02d}:00" for h in range(8, 20)]
+<<<<<<< HEAD
     import locale
 
     try:
@@ -24,10 +25,12 @@ def render_membro_view(conn, regras, usuario_logado):
     except locale.Error:
         locale.setlocale(locale.LC_TIME, 'C')
 
+=======
+>>>>>>> 7cf68b6 (Corrige erro de locale no Streamlit Cloud)
 
     st.set_page_config(page_title="Dino-Tech - Painel do Membro", layout="wide")
     st.markdown("<h1 style='color:#4B0082; text-align:center;'>👤 Painel do Membro - Dino-Tech</h1>", unsafe_allow_html=True)
-    if st.button("regarrar página", key="regarrar_pagina_membro"):
+    if st.button("Recarregar página", key="recarregar_pagina_membro"):
         st.rerun()
     st.markdown(f"👤 Logado como: **{usuario_logado}** (membro)")
     
@@ -126,7 +129,7 @@ def render_membro_view(conn, regras, usuario_logado):
         
         for data_str in sorted(comp_por_data.keys()):
             data_obj = datetime.datetime.strptime(data_str, "%Y-%m-%d")
-            data_formatada = data_obj.strftime("%d de %B de %Y").capitalize()
+            data_formatada = format_date(data_obj, "d 'de' MMMM 'de' y", locale='pt_BR')
             st.markdown(f"#### 🗓️ {data_formatada}")
             for titulo, desc, inicio, fim in comp_por_data[data_str]:
                 with st.expander(f"📌 **{titulo}** — {inicio} a {fim}"):
@@ -228,7 +231,7 @@ def render_membro_view(conn, regras, usuario_logado):
                 comp_por_data[data].append((cid, titulo, desc, inicio, fim))
             for data_str in sorted(comp_por_data.keys()):
                 data_obj = datetime.datetime.strptime(data_str, "%Y-%m-%d")
-                data_formatada = data_obj.strftime("%d de %B de %Y").capitalize()
+                data_formatada = format_date(data_obj, "d 'de' MMMM 'de' y", locale='pt_BR')
                 st.markdown(f"### 🗓️ {data_formatada}")
                 for cid, titulo, desc, inicio, fim in comp_por_data[data_str]:
                     with st.expander(f"📌 **{titulo}** — {inicio} a {fim}"):
