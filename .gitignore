@@ -3,7 +3,7 @@ __pycache__/
 *.pyc
 .env
 .streamlit/secrets.toml
-equipe.db
+migrar_regras.py
 *.db
 .regras.json.swp
 .DS_Store

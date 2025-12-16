@@ -23,19 +23,19 @@ def enviar_kanban_pushbullet(tarefas, token):
                 "responsavel": nome or "Não atribuído"
             })
 
-        msg = "📋 **Quadro Kanban - Dino-Tech**\n\n"
+        msg = "📋Quadro Kanban-Dino-Tech\n\n"
         nomes_colunas = {
             "to_do": "📝 A Fazer",
             "doing": "🔄 Fazendo",
             "done": "✅ Feito"
         }
         for status_key, nome_col in nomes_colunas.items():
-            msg += f"\n**{nome_col}**\n"
+            msg += f"\n{nome_col}\n"
             if not kanban[status_key]:
                 msg += "- Nenhuma tarefa\n"
             else:
                 for t in kanban[status_key]:
-                    msg += f"- **{t['titulo']}** ({t['responsavel']})\n"
+                    msg += f"- {t['titulo']} (Responsável ou Responsáveis:({t['responsavel']})\n)"
                     if t['descricao']:
                         msg += f"  > {t['descricao']}\n"
 

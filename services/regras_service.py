@@ -1,31 +1,37 @@
 # services/regras_service.py
 import json
-import os
 
-# Caminho do arquivo de regras (ajuste se quiser colocar em outra pasta)
-REGRAS_PATH = "config/regras.json"
+# ID único para nosso conjunto de regras no banco de dados.
+# Como teremos apenas um "documento" de regras, podemos usar um ID fixo.
+REGRAS_ID = 1
 
-def carregar_regras():
+def carregar_regras(conn):
     """
-    Carrega o arquivo regras.json.
-    Lança exceção se o arquivo não existir ou estiver malformado.
-    """
-    if not os.path.exists(REGRAS_PATH):
-        raise FileNotFoundError("Arquivo 'regras.json' não encontrado na raiz do projeto.")
-    
-    try:
-        with open(REGRAS_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except json.JSONDecodeError as e:
-        raise ValueError(f"Erro ao decodificar 'regras.json': {e}")
-
-def salvar_regras(regras):
-    """
-    Salva o dicionário `regras` no arquivo regras.json.
+    Carrega as regras do banco de dados Supabase.
+    Se não houver regras, retorna um dicionário vazio.
     """
     try:
-        with open(REGRAS_PATH, "w", encoding="utf-8") as f:
-            json.dump(regras, f, ensure_ascii=False, indent=2)
+        # Busca a linha na tabela 'regras' onde o id é REGRAS_ID
+        res = conn.table("regras").select("conteudo").eq("id", REGRAS_ID).single().execute()
+        if res.data and "conteudo" in res.data:
+            return res.data["conteudo"]
+        return {}
+    except Exception as e:
+        # Se der erro (ex: tabela vazia), retorna um dict vazio para não quebrar a app
+        print(f"Aviso: Não foi possível carregar as regras do Supabase. {e}")
+        return {}
+
+def salvar_regras(conn, regras: dict):
+    """
+    Salva ou atualiza o dicionário `regras` no banco de dados Supabase.
+    """
+    try:
+        # O método 'upsert' é perfeito aqui: ele insere se não existir, ou atualiza se já existir.
+        conn.table("regras").upsert({
+            "id": REGRAS_ID,
+            "conteudo": regras
+        }).execute()
         return True
     except Exception as e:
-        raise RuntimeError(f"Erro ao salvar regras: {e}")
+        print(f"Erro ao salvar regras no Supabase: {e}")
+        return False

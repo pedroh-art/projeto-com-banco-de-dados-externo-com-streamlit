@@ -1,6 +1,8 @@
 # views/admin_view.py
 import streamlit as st
 import datetime
+import locale
+import copy
 from collections import defaultdict
 from models.integrante import (
     listar_integrantes, cadastrar_integrante, cadastrar_login_membro,
@@ -23,8 +25,19 @@ import time
 HORARIOS_PADRAO = [f"{h:02d}:00" for h in range(8, 20)]
 
 def render_admin_view(conn, regras):
+    # Configura o locale para português do Brasil para formatar as datas
+    try:
+        locale.setlocale(locale.LC_TIME, 'pt_BR.UTF-8')
+    except locale.Error:
+        locale.setlocale(locale.LC_TIME, 'Portuguese_Brazil')
+
+    # Faz uma cópia profunda das regras no início para detectar mudanças
+    regras_originais = copy.deepcopy(regras)
+
     st.set_page_config(page_title="Banco De Dados Da Dino-Tech", layout="wide")
     st.markdown(f"<h1 style='color:#FFD700; text-align:center;'>🚀 Banco De Dados Da Dino-Tech 🚀</h1>", unsafe_allow_html=True)
+    if st.button("recarregar página", key="regarrar_pagina_membro"):
+        st.rerun()
     st.markdown(f"👤 Logado como: **{st.session_state.usuario_logado}** (administrador)")
     if st.button("🔒 Sair", key="sair_admin"):
         st.session_state.usuario_logado = None
@@ -112,8 +125,7 @@ def render_admin_view(conn, regras):
                     with col2:
                         if st.button("❌", key=f"del_dir_setor_{setor['nome']}_{idx}"):
                             direitos.pop(idx)
-                            if salvar_regras(regras):
-                                st.rerun()
+                            st.rerun()
                 novo_dir = st.text_input(
                     f"Novo direito exclusivo para {setor['nome']}",
                     key=f"novo_dir_setor_{setor['nome']}"
@@ -121,8 +133,7 @@ def render_admin_view(conn, regras):
                 if st.button(f"➕ Adicionar a {setor['nome']}", key=f"add_dir_setor_{setor['nome']}"):
                     if novo_dir.strip():
                         direitos.append(novo_dir.strip())
-                        if salvar_regras(regras):
-                            st.rerun()
+                        st.rerun()
                 if direitos:
                     st.markdown("#### ✅ Direitos exclusivos:")
                     for d in direitos:
@@ -292,8 +303,7 @@ def render_admin_view(conn, regras):
                                 if st.button("❌", key=f"del_resp_{setor['nome']}_{func['nome']}_{idx}"):
                                     resp_list.pop(idx)
                                     func["responsabilidades"] = resp_list
-                                    if salvar_regras(regras):
-                                        st.rerun()
+                                    st.rerun()
                         nova_resp = st.text_input(
                             f"Nova responsabilidade para {func['nome']}",
                             key=f"nova_resp_{setor['nome']}_{func['nome']}"
@@ -302,8 +312,7 @@ def render_admin_view(conn, regras):
                             if nova_resp.strip():
                                 resp_list.append(nova_resp.strip())
                                 func["responsabilidades"] = resp_list
-                                if salvar_regras(regras):
-                                    st.rerun()
+                                st.rerun()
         with st.expander("📜 Direitos gerais da equipe", expanded=False):
             direitos = regras.setdefault("direitos_gerais", [])
             for idx in range(len(direitos.copy())):
@@ -315,14 +324,12 @@ def render_admin_view(conn, regras):
                     if st.button("❌", key=f"del_dir_{idx}"):
                         direitos.pop(idx)
                         regras["direitos_gerais"] = direitos
-                        if salvar_regras(regras):
-                            st.rerun()
+                        st.rerun()
             novo_dir = st.text_input("Novo direito geral", key="novo_dir_global")
             if st.button("➕ Adicionar direito geral", key="btn_add_dir_global"):
                 if novo_dir.strip():
                     direitos.append(novo_dir.strip())
-                    if salvar_regras(regras):
-                        st.rerun()
+                    st.rerun()
         with st.expander("📑 Regras gerais da equipe", expanded=False):
             regras_gerais = regras.setdefault("regras_gerais", [])
             for idx in range(len(regras_gerais.copy())):
@@ -334,14 +341,12 @@ def render_admin_view(conn, regras):
                     if st.button("❌", key=f"del_reg_{idx}"):
                         regras_gerais.pop(idx)
                         regras["regras_gerais"] = regras_gerais
-                        if salvar_regras(regras):
-                            st.rerun()
+                        st.rerun()
             nova_regra = st.text_input("Nova regra geral", key="nova_regra_global")
             if st.button("➕ Adicionar regra geral", key="btn_add_reg_global"):
                 if nova_regra.strip():
                     regras_gerais.append(nova_regra.strip())
-                    if salvar_regras(regras):
-                        st.rerun()
+                    st.rerun()
         with st.expander("💡 Justificativas", expanded=False):
             por_que = regras.setdefault("por_que", {})
             chaves = list(por_que.keys())
@@ -353,15 +358,13 @@ def render_admin_view(conn, regras):
                 with col2:
                     if st.button("❌", key=f"del_just_{idx}"):
                         por_que.pop(chave)
-                        if salvar_regras(regras):
-                            st.rerun()
+                        st.rerun()
             nova_chave = st.text_input("Nova justificativa: nome curto", key="nova_just_chave")
             nova_valor = st.text_area("Texto da justificativa", key="nova_just_valor")
             if st.button("➕ Adicionar justificativa", key="btn_add_just"):
                 if nova_chave.strip() and nova_valor.strip():
                     por_que[nova_chave.strip()] = nova_valor.strip()
-                    if salvar_regras(regras):
-                        st.rerun()
+                    st.rerun()
         with st.expander("👥 Limite total de membros da equipe", expanded=False):
             limite_atual = regras.get("limite_total_membros", 6)
             novo_limite = st.number_input(
@@ -373,11 +376,14 @@ def render_admin_view(conn, regras):
                 key="limite_total"
             )
             regras["limite_total_membros"] = int(novo_limite)
-        st.markdown("<hr>", unsafe_allow_html=True)
-        if st.button("💾 Salvar todas as alterações", key="btn_save_all_regras"):
-            if salvar_regras(regras):
-                st.success("✅ Todas as regras foram salvas com sucesso!")
-                st.rerun()
+
+        # Lógica de salvamento automático
+        if regras != regras_originais:
+            salvar_regras(conn, regras)
+            st.toast("💾 Alterações salvas automaticamente!", icon="✅")
+            time.sleep(2)
+            st.rerun()
+
 
     # ==============================================================================
     # ABA 8: Kanban
@@ -474,7 +480,7 @@ def render_admin_view(conn, regras):
                 comp_por_data[data].append((cid, titulo, desc, inicio, fim))
             for data_str in sorted(comp_por_data.keys()):
                 data_obj = datetime.datetime.strptime(data_str, "%Y-%m-%d")
-                data_formatada = data_obj.strftime("%d de %B de %Y")
+                data_formatada = data_obj.strftime("%d de %B de %Y").capitalize()
                 st.markdown(f"### 🗓️ {data_formatada}")
                 for cid, titulo, desc, inicio, fim in comp_por_data[data_str]:
                     with st.expander(f"📌 **{titulo}** — {inicio} a {fim}"):

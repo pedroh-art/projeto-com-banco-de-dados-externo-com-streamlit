@@ -8,7 +8,7 @@ from views import render_membro_view, render_admin_view
 initialize_session_state()
 
 try:
-    regras = carregar_regras()
+    regras = carregar_regras(conn)
 except Exception as e:
     st.error(str(e))
     st.stop()
