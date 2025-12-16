@@ -17,16 +17,6 @@ from models.compromisso import (
 def render_membro_view(conn, regras, usuario_logado):
     # Configura o locale para português do Brasil para formatar as datas
     HORARIOS_PADRAO = [f"{h:02d}:00" for h in range(8, 20)]
-<<<<<<< HEAD
-    import locale
-
-    try:
-        locale.setlocale(locale.LC_TIME, 'pt_BR.UTF-8')
-    except locale.Error:
-        locale.setlocale(locale.LC_TIME, 'C')
-
-=======
->>>>>>> 7cf68b6 (Corrige erro de locale no Streamlit Cloud)
 
     st.set_page_config(page_title="Dino-Tech - Painel do Membro", layout="wide")
     st.markdown("<h1 style='color:#4B0082; text-align:center;'>👤 Painel do Membro - Dino-Tech</h1>", unsafe_allow_html=True)
@@ -118,29 +108,6 @@ def render_membro_view(conn, regras, usuario_logado):
     st.markdown("---")
 
     # ==============================================================================
-    # COMPROMISSOS OFICIAIS
-    # ==============================================================================
-    st.markdown("### 📅 Compromissos Oficiais da Equipe")
-    compromissos = listar_compromissos(conn)
-    if compromissos:
-        comp_por_data = defaultdict(list)
-        for cid, titulo, desc, data, inicio, fim in compromissos:
-            comp_por_data[data].append((titulo, desc, inicio, fim))
-        
-        for data_str in sorted(comp_por_data.keys()):
-            data_obj = datetime.datetime.strptime(data_str, "%Y-%m-%d")
-            data_formatada = format_date(data_obj, "d 'de' MMMM 'de' y", locale='pt_BR')
-            st.markdown(f"#### 🗓️ {data_formatada}")
-            for titulo, desc, inicio, fim in comp_por_data[data_str]:
-                with st.expander(f"📌 **{titulo}** — {inicio} a {fim}"):
-                    if desc:
-                        st.write(desc)
-    else:
-        st.info("Nenhum compromisso oficial agendado ainda.")
-
-    st.markdown("---")
-
-    # ==============================================================================
     # KANBAN (SOMENTE LEITURA)
     # ==============================================================================
     atribuicoes_do_integrante = listar_atribuicoes(conn, meu_id)
@@ -223,7 +190,8 @@ def render_membro_view(conn, regras, usuario_logado):
                     st.success("✅ Quadro enviado com sucesso via Pushbullet!")
                 else:
                     st.error(f"❌ {msg}")
-        st.markdown("<h2 style='color:#2E8B57;'>📅 Compromissos Oficiais da Equipe</h2>", unsafe_allow_html=True)
+        st.markdown("---")
+        st.markdown("<h2 style='color:#2E8B57;'>📅 Gerenciar Compromissos da Equipe</h2>", unsafe_allow_html=True)
         compromissos = listar_compromissos(conn)
         if compromissos:
             comp_por_data = defaultdict(list)
@@ -315,6 +283,27 @@ def render_membro_view(conn, regras, usuario_logado):
                     st.rerun()            
     
     else:
+        # ==============================================================================
+        # COMPROMISSOS OFICIAIS (SOMENTE LEITURA)
+        # ==============================================================================
+        st.markdown("### 📅 Compromissos Oficiais da Equipe")
+        compromissos = listar_compromissos(conn)
+        if compromissos:
+            comp_por_data = defaultdict(list)
+            for cid, titulo, desc, data, inicio, fim in compromissos:
+                comp_por_data[data].append((titulo, desc, inicio, fim))
+            
+            for data_str in sorted(comp_por_data.keys()):
+                data_obj = datetime.datetime.strptime(data_str, "%Y-%m-%d")
+                data_formatada = format_date(data_obj, "d 'de' MMMM 'de' y", locale='pt_BR')
+                st.markdown(f"#### 🗓️ {data_formatada}")
+                for titulo, desc, inicio, fim in comp_por_data[data_str]:
+                    with st.expander(f"📌 **{titulo}** — {inicio} a {fim}"):
+                        if desc:
+                            st.write(desc)
+        else:
+            st.info("Nenhum compromisso oficial agendado ainda.")
+        st.markdown("---")
         st.markdown("### 📊 Quadro Kanban (visão somente leitura)")
 
         col_a_fazer, col_fazendo, col_feito = st.columns(3)
