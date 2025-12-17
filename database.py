@@ -1,12 +1,15 @@
 # database.py
-from supabase import create_client
 import streamlit as st
+from supabase import create_client, Client
 
-try:
-    url = st.secrets["SUPABASE_URL"]
-    key = st.secrets["SUPABASE_KEY"]
-except KeyError:
-    st.error("Erro: As chaves SUPABASE_URL e SUPABASE_KEY não foram configuradas no secrets.toml.")
-    st.stop()
+def init_connection() -> Client:
+    """
+    Inicializa e retorna o cliente Supabase usando as credenciais
+    armazenadas nos segredos do Streamlit.
+    """
+    url = st.secrets["supabase"]["url"]
+    key = st.secrets["supabase"]["key"]
+    return create_client(url, key)
 
-supabase = create_client(url, key)
+# Cria a instância do cliente que será importada por outros módulos
+supabase = init_connection()

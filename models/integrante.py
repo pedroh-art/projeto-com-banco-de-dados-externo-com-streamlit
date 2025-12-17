@@ -54,6 +54,64 @@ def cadastrar_login_membro(conn, nome):
     except Exception as e:
         print(f"❌ Erro inesperado ao criar login '{usuario}': {e}")
         raise
+
+def trocar_senha_membro(conn, usuario, senha_antiga, nova_senha):
+    """
+    Permite que um membro troque sua própria senha.
+    """
+    try:
+        # 1. Buscar o hash da senha atual do usuário
+        res = conn.table("usuarios").select("senha").eq("usuario", usuario).maybe_single().execute()
+        
+        if not res.data:
+            return False, "Usuário não encontrado."
+
+        senha_hash_atual = res.data['senha'].encode('latin1')
+
+        # 2. Verificar se a senha antiga fornecida corresponde ao hash
+        # Para compatibilidade, verifica se a senha salva é um hash ou texto plano
+        try:
+            senha_correta = bcrypt.checkpw(senha_antiga.encode('utf-8'), senha_hash_atual)
+        except ValueError: # Se a senha salva for texto plano
+            senha_correta = (senha_antiga == res.data['senha'])
+
+        if not senha_correta:
+            return False, "A senha atual está incorreta."
+
+        # 3. Gerar o hash da nova senha e atualizar no banco de dados
+        nova_senha_hash = bcrypt.hashpw(nova_senha.encode('utf-8'), bcrypt.gensalt())
+        conn.table("usuarios").update({"senha": nova_senha_hash.decode('latin1')}).eq("usuario", usuario).execute()
+
+        return True, "Senha alterada com sucesso!"
+    except Exception as e:
+        print(f"❌ Erro ao trocar a senha para o usuário '{usuario}': {e}")
+        return False, "Ocorreu um erro inesperado ao tentar alterar a senha."
+
+def listar_logins_membros(conn):
+    """Lista todos os logins de membros (usuário e senha)."""
+    try:
+        res = conn.table("usuarios").select("id, usuario, senha").eq("tipo", "membro").order("usuario").execute()
+        return res.data if res.data else []
+    except Exception as e:
+        print(f"Erro ao listar logins de membros: {e}")
+        return []
+
+def resetar_senha_admin(conn, usuario_id):
+    """Gera uma nova senha para um usuário e a retorna."""
+    try:
+        nova_senha = gerar_senha_forte(tamanho=12)
+        # Criptografa a nova senha antes de salvar
+        nova_senha_hash = bcrypt.hashpw(nova_senha.encode('utf-8'), bcrypt.gensalt())
+        
+        # Atualiza a senha no banco de dados com o hash criptografado
+        conn.table("usuarios").update({"senha": nova_senha_hash.decode('latin1')}).eq("id", usuario_id).execute()
+        
+        print(f"✅ Senha resetada para usuário ID {usuario_id}.")
+        return nova_senha # Retorna a senha em texto plano para o admin ver
+    except Exception as e:
+        print(f"❌ Erro ao resetar senha para usuário ID {usuario_id}: {e}")
+        return None
+
 def atribuir_setor_funcao(conn, integrante_id, setor, funcao):
     try:
         conn.table("atribuicoes").insert({

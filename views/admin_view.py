@@ -8,15 +8,30 @@ from models.integrante import (
     atribuir_setor_funcao, listar_atribuicoes, remover_atribuicao,
     remover_integrante_completo, contar_total_integrantes,
     contar_atribuidos_por_funcao, contar_setores_unicos_por_integrante,
-    contar_total_funcoes_por_integrante
+    contar_total_funcoes_por_integrante, listar_logins_membros, resetar_senha_admin
 )
 from models.tarefa import (
     criar_tarefa, atualizar_status_tarefa, excluir_tarefa,
     listar_tarefas_por_status, obter_quadro_kanban
 )
+import requests
 from models.compromisso import (
     criar_compromisso, listar_compromissos, atualizar_compromisso, excluir_compromisso
 )
+from models.reclamacao import (
+    listar_reclamacoes, marcar_reclamacao_como_lida, excluir_reclamacao
+)
+from models.momento import (
+    listar_momentos, excluir_momento
+)
+from models.votacao import (
+    criar_votacao, listar_votacoes_com_status, atualizar_status_votacao,
+    excluir_votacao, obter_resultados, obter_resultados_detalhados
+)
+from models.credencial import (
+    criar_credencial, listar_credenciais, excluir_credencial
+)
+from views.shared_components import render_central_de_senhas, render_registro_de_pecas, render_missoes_tapete, render_estrategia_robo, render_biblioteca_codigos, render_projeto_inovacao, render_controle_acompanhamento
 from services.regras_service import salvar_regras
 from utils.pushbullet_util import enviar_kanban_pushbullet
 from babel.dates import format_date
@@ -38,9 +53,10 @@ def render_admin_view(conn, regras):
         st.session_state.tipo_usuario = None
         st.rerun()
 
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
-        "📂 Setores", "📜 Direitos gerais", "🔑 Direitos por Setor", "📑 Regras gerais", 
-        "💡 Por quê", "👥 Membros", "⚙️ Editar regras", "📊 Kanban", "📅 Compromissos"
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12, tab13, tab14, tab15, tab16, tab17, tab18 = st.tabs([
+        "📂 Setores", "📜 Direitos gerais", "🔑 Direitos por Setor", "📑 Regras gerais",
+        "💡 Por quê", "👥 Membros", "⚙️ Editar regras", "🧩 Projeto de Inovação", "🤖 Robô e Programação", "📊 Kanban", "📅 Compromissos", "📈 Acompanhamento", "🗣️ Reclamações", "📸 Momentos",
+        "🗳️ Votação", "🔑 Central de Senhas", "👤 Usuários e Senhas", "📦 Registro de Peças"
     ])
 
     # ==============================================================================
@@ -176,22 +192,23 @@ def render_admin_view(conn, regras):
                 if cadastrar_integrante(conn, novo_nome):
                     user, pwd = cadastrar_login_membro(conn, novo_nome)
                     if user:
-                        st.success(f"✅ Integrante '{novo_nome}' cadastrado! Login: **{user}** / Senha: **{pwd}**")
+                        st.toast(f"✅ Integrante '{novo_nome}' cadastrado! Login: **{user}** / Senha: **{pwd}**", icon="✅")
                         print(f"Login criado para {novo_nome} → Usuário: {user} | Senha: {pwd}")
                         credenciais = f"Usuário: {user}\nSenha: {pwd}\n\n(Obs: Guarde este arquivo em local seguro!)"
+                        
                 
-                        # ✅ Dispara download automático
-                        st.download_button(
+                        
+                    else:
+                        st.success(f"✅ Integrante '{novo_nome}' cadastrado!")
+                    if st.download_button(
                             label="📥 Baixar credenciais (clique para salvar)",
                             data=credenciais,
                             file_name=f"credenciais_{user}.txt",
                             mime="text/plain",
                             key=f"download_{user}"
-                        ) # Pequena pausa para garantir que o usuário veja a mensagem
-                        time.sleep(3)
-                    else:
-                        st.success(f"✅ Integrante '{novo_nome}' cadastrado!")
-                    st.rerun()
+                        ):
+                        st.rerun()
+                    st.stop()
         st.markdown(f"📊 Total de integrantes: **{total} / {limite_total}**")
         if total >= limite_total:
             st.warning(f"⚠️ Limite máximo de {limite_total} membros atingido!")
@@ -265,6 +282,7 @@ def render_admin_view(conn, regras):
     # ABA 7: Editar regras
     # ==============================================================================
     with tab7:
+            
         st.markdown("<h2 style='color:#8A2BE2;'>⚙️ Editar limites e textos das regras</h2>", unsafe_allow_html=True)
         for setor in regras.get("setores", []):
             with st.expander(f"🏗️ {setor['nome']} — capacidade atual: {setor.get('capacidade', 'N/A')} pessoas", expanded=False):
@@ -374,15 +392,40 @@ def render_admin_view(conn, regras):
         # Lógica de salvamento automático
         if regras != regras_originais:
             salvar_regras(conn, regras)
-            st.toast("💾 Alterações salvas automaticamente!", icon="✅")
-            time.sleep(2)
-            st.rerun()
+            st.toast("💾 Alterações feitas foram salvas automaticamente!", icon="✅", duration="short")
+            with st.sidebar:
+                if st.button("💾 Recarregar para aplicar mudanças", key="recarregar_apos_salvar_regras"):
+                    st.rerun()
+            st.stop()
+               
 
+    # ==============================================================================
+    # ABA 8: Projeto de Inovação
+    # ==============================================================================
+    with tab8:
+        render_projeto_inovacao(conn, read_only=False)
+
+    # ==============================================================================
+    # ABA 8: Robô e Programação
+    # ==============================================================================
+    with tab9:
+        st.markdown("<h2 style='color:#00BFFF;'>🤖 Robô e Programação</h2>", unsafe_allow_html=True)
+        sub_tab_missoes, sub_tab_estrategia, sub_tab_codigos = st.tabs(["🎯 Missões", "🛠️ Estratégia", "🐍 Códigos"])
+        
+        with sub_tab_missoes:
+            # Admin tem acesso completo (read_only=False)
+            render_missoes_tapete(conn, read_only=False)
+        
+        with sub_tab_estrategia:
+            render_estrategia_robo(conn, read_only=False)
+        
+        with sub_tab_codigos:
+            render_biblioteca_codigos(conn, read_only=False)
 
     # ==============================================================================
     # ABA 8: Kanban
     # ==============================================================================
-    with tab8:
+    with tab10:
         st.markdown("<h2 style='color:#4B0082;'>📊 Quadro Kanban</h2>", unsafe_allow_html=True)
         st.subheader("➕ Nova Tarefa")
         integrantes_lista = listar_integrantes(conn)
@@ -465,7 +508,7 @@ def render_admin_view(conn, regras):
     # ==============================================================================
     # ABA 9: Compromissos
     # ==============================================================================
-    with tab9:
+    with tab11:
         st.markdown("<h2 style='color:#2E8B57;'>📅 Compromissos Oficiais da Equipe</h2>", unsafe_allow_html=True)
         compromissos = listar_compromissos(conn)
         if compromissos:
@@ -556,3 +599,244 @@ def render_admin_view(conn, regras):
                 if st.button("❌ Cancelar edição", key="comp_cancelar"):
                     st.session_state.editando_compromisso = None
                     st.rerun()
+
+    # ==============================================================================
+    # ABA 12: Acompanhamento
+    # ==============================================================================
+    with tab12:
+        render_controle_acompanhamento(
+            conn, 
+            can_edit_checklist=True, 
+            can_edit_reunioes=True, 
+            can_edit_erros=True
+        )
+
+    # ==============================================================================
+    # ABA 13: Reclamações Anônimas
+    # ==============================================================================
+    with tab13:
+        st.markdown("<h2 style='color:#FF6347;'>🗣️ Caixa de Feedback</h2>", unsafe_allow_html=True)
+        st.info("Este espaço é para visualizar feedbacks e reclamações enviadas pelos membros da equipe.")
+
+        reclamacoes = listar_reclamacoes(conn)
+
+        if not reclamacoes:
+            st.success("✅ Nenhuma reclamação nova. Tudo em ordem!")
+        else:
+            reclamacoes_novas = [r for r in reclamacoes if r['status'] == 'nova']
+            reclamacoes_lidas = [r for r in reclamacoes if r['status'] == 'lida']
+
+            st.markdown("### 📬 Novas")
+            if not reclamacoes_novas:
+                st.info("Nenhuma reclamação nova.")
+            for rec in reclamacoes_novas:
+                data_obj = datetime.datetime.fromisoformat(rec['data_criacao'])
+                try:
+                    # Tenta formatar com hora
+                    data_criacao = format_date(data_obj, "d MMM y, HH:mm", locale='pt_BR')
+                except AttributeError:
+                    # Se falhar (não tem hora), formata sem hora
+                    data_criacao = format_date(data_obj, "d MMM y", locale='pt_BR')
+                with st.expander(f"Feedback de **{rec.get('autor', 'N/A')}** - {data_criacao}"):
+                    st.write(rec['texto'])
+                    col1, col2 = st.columns(2)
+                    if col1.button("Marcar como lida", key=f"ler_{rec['id']}"):
+                        marcar_reclamacao_como_lida(conn, rec['id'])
+                        st.rerun()
+                    if col2.button("🗑️ Excluir", key=f"del_rec_{rec['id']}"):
+                        excluir_reclamacao(conn, rec['id'])
+                        st.rerun()
+            
+            st.markdown("### 📖 Lidas")
+            for rec in reclamacoes_lidas:
+                data_obj = datetime.datetime.fromisoformat(rec['data_criacao'])
+                try:
+                    # Tenta formatar com hora
+                    data_criacao = format_date(data_obj, "d MMM y, HH:mm", locale='pt_BR')
+                except AttributeError:
+                    # Se falhar (não tem hora), formata sem hora
+                    data_criacao = format_date(data_obj, "d MMM y", locale='pt_BR')
+                with st.expander(f"Feedback lido de **{rec.get('autor', 'N/A')}** - {data_criacao}"):
+                    st.write(rec['texto'])
+                    if st.button("🗑️ Excluir", key=f"del_rec_lida_{rec['id']}"):
+                        excluir_reclamacao(conn, rec['id'])
+                        st.rerun()
+
+    # ==============================================================================
+    # ABA 14: Momentos da Equipe
+    # ==============================================================================
+    with tab14:
+        st.markdown("<h2 style='color:#8A2BE2;'>📸 Gerenciar Momentos da Equipe</h2>", unsafe_allow_html=True)
+        st.info("Visualize e gerencie as fotos enviadas pelos membros da equipe.")
+
+        momentos = listar_momentos(conn)
+        if not momentos:
+            st.info("Nenhuma foto foi enviada ainda.")
+        else:
+            for momento in momentos:
+                autor = momento.get("integrantes", {}).get("nome", "Equipe")
+                st.image(momento["url_imagem"], caption=f"'{momento['descricao']}'", width=1365)
+                if st.button("🗑️ Excluir esta foto", key=f"del_momento_{momento['id']}"):
+                    if excluir_momento(conn, momento['id'], momento['url_imagem']):
+                        st.success("✅ Foto excluída com sucesso!")
+                        st.rerun()
+                try:
+                    file_name = momento['url_imagem'].split('/')[-1]
+                    st.download_button(
+                        label="📥 Baixar",
+                        data=requests.get(momento["url_imagem"]).content,
+                        file_name=file_name, # type: ignore
+                        mime="image/png",
+                        key=f"download_momento_{momento['id']}"
+                   )
+                except Exception as e:
+                    st.error(f"Erro no download: {e}")        
+                st.markdown("---")
+
+    # ==============================================================================
+    # ABA 15: Votação
+    # ==============================================================================
+    with tab15:
+        st.markdown("<h2 style='color:#8A2BE2;'>🗳️ Votações da Equipe</h2>", unsafe_allow_html=True)
+
+        with st.expander("➕ Criar Nova Votação", expanded=False):
+            titulo_votacao = st.text_input("Título da votação", key="votacao_titulo")
+            opcoes_votacao = st.text_area(
+                "Opções (uma por linha)",
+                key="votacao_opcoes",
+                help="Digite cada opção em uma nova linha."
+            )
+            tipo_votacao = st.radio(
+                "Tipo de Votação",
+                ('anonima', 'nao_anonima'),
+                format_func=lambda x: "Anônima (só mostra o total)" if x == 'anonima' else "Nominal (mostra quem votou em quê)",
+                key="tipo_votacao"
+            )
+            if st.button("🚀 Criar Votação", key="votacao_criar"):
+                opcoes_lista = [opt.strip() for opt in opcoes_votacao.split('\n') if opt.strip()]
+                if not titulo_votacao.strip():
+                    st.warning("⚠️ O título da votação não pode estar vazio.")
+                elif len(opcoes_lista) < 2:
+                    st.warning("⚠️ A votação precisa ter pelo menos duas opções.")
+                else:
+                    if criar_votacao(conn, titulo_votacao, opcoes_lista, tipo_votacao):
+                        st.success(f"✅ Votação '{titulo_votacao}' criada com sucesso!")
+                        st.rerun()
+                    else:
+                        st.error("❌ Erro ao criar a votação.")
+
+        st.markdown("---")
+        st.subheader("📋 Votações em Andamento e Encerradas")
+
+        votacoes = listar_votacoes_com_status(conn)
+        if not votacoes:
+            st.info("Nenhuma votação foi criada ainda.")
+        else:
+            for votacao in votacoes:
+                status_emoji = "🟢" if votacao['status'] == 'aberta' else "🔴"
+                tipo_texto = "Anônima" if votacao.get('tipo_votacao', 'anonima') == 'anonima' else "Nominal"
+                with st.expander(f"{status_emoji} {votacao['titulo']} ({votacao['status'].capitalize()} - {tipo_texto})"):
+                    st.markdown("#### Resultados Atuais")
+                    resultados = obter_resultados(conn, votacao['id'])
+                    total_votos = sum(resultados.values())
+                    st.write(f"Total de votos: **{total_votos}**")
+
+                    # Mostra resultados anônimos (barra de progresso)
+                    for opcao, contagem in resultados.items():
+                        percentual = (contagem / total_votos * 100) if total_votos > 0 else 0
+                        st.markdown(f"**{opcao}**: {contagem} voto(s)")
+                        st.progress(percentual / 100)
+                    
+                    # Se a votação for não anônima, mostra os detalhes
+                    if votacao.get('tipo_votacao') == 'nao_anonima':
+                        st.markdown("##### Votos por integrante:")
+                        resultados_detalhados = obter_resultados_detalhados(conn, votacao['id'])
+                        for opcao, integrantes in resultados_detalhados.items():
+                            st.markdown(f"**{opcao}**: {', '.join(integrantes)}")
+
+                    st.markdown("---")
+                    st.markdown("##### Gerenciar Votação")
+                    col1, col2, col3 = st.columns(3)
+                    if votacao['status'] == 'aberta':
+                        if col1.button("🔒 Fechar Votação", key=f"fechar_vot_{votacao['id']}"):
+                            atualizar_status_votacao(conn, votacao['id'], 'fechada')
+                            st.rerun()
+                    else:
+                        if col1.button("🔓 Reabrir Votação", key=f"reabrir_vot_{votacao['id']}"):
+                            atualizar_status_votacao(conn, votacao['id'], 'aberta')
+                            st.rerun()
+                    if col3.button("🗑️ Excluir Votação", key=f"excluir_vot_{votacao['id']}", type="primary"):
+                        if excluir_votacao(conn, votacao['id']):
+                            st.success("✅ Votação excluída com sucesso!")
+                            st.rerun()
+
+    # ==============================================================================
+    # ABA 16: Central de Senhas
+    # ==============================================================================
+    with tab16:
+        render_central_de_senhas(conn)
+
+    # ==============================================================================
+    # ABA 17: Usuários e Senhas
+    # ==============================================================================
+    with tab17:
+        st.markdown("<h2 style='color:#DC143C;'>👤 Usuários e Senhas dos Membros</h2>", unsafe_allow_html=True)
+        st.warning("🔒 Esta área expõe as senhas dos usuários. Use com extrema cautela.")
+
+        logins = listar_logins_membros(conn)
+
+        if not logins:
+            st.info("Nenhum login de membro encontrado.")
+        else:
+            for login in logins:
+                with st.container(border=True):
+                    st.markdown(f"#### {login['usuario']}")
+                    
+                    # Campo de Usuário e botão de copiar
+                    col_user_input, col_user_btn = st.columns([0.7, 0.3])
+                    with col_user_input:
+                        st.text_input("Usuário", value=login['usuario'], key=f"login_user_display_{login['id']}", disabled=True, label_visibility="collapsed")
+                    with col_user_btn:
+                        if st.button("📋 Copiar Usuário", key=f"copy_login_user_btn_{login['id']}"):
+                            st.session_state[f"copy_login_user_value_{login['id']}"] = login['usuario']
+                            st.rerun()
+
+                    if f"copy_login_user_value_{login['id']}" in st.session_state:
+                        st.markdown(f'<script>navigator.clipboard.writeText("{st.session_state[f"copy_login_user_value_{login["id"]}"]}");</script>', unsafe_allow_html=True)
+                        st.toast("Usuário copiado!", icon="📋")
+                        del st.session_state[f"copy_login_user_value_{login['id']}"]
+
+                    # Campo de Senha e botão de copiar
+                    col_pass_input, col_pass_btn = st.columns([0.7, 0.3])
+                    with col_pass_input:
+                        st.text_input("Senha", value=login['senha'], key=f"login_pass_display_{login['id']}", disabled=True, type="password", label_visibility="collapsed")
+                    with col_pass_btn:
+                        if st.button("📋 Copiar Senha", key=f"copy_login_pass_btn_{login['id']}"):
+                            st.session_state[f"copy_login_pass_value_{login['id']}"] = login['senha']
+                            st.rerun()
+
+                    if f"copy_login_pass_value_{login['id']}" in st.session_state:
+                        st.markdown(f'<script>navigator.clipboard.writeText("{st.session_state[f"copy_login_pass_value_{login["id"]}"]}");</script>', unsafe_allow_html=True)
+                        st.toast("Senha copiada!", icon="📋")
+                        del st.session_state[f"copy_login_pass_value_{login['id']}"]
+
+                    # Botão para resetar a senha
+                    if st.button("🔄 Resetar Senha", key=f"reset_pass_btn_{login['id']}", type="primary"):
+                        nova_senha = resetar_senha_admin(conn, login['id'])
+                        if nova_senha:
+                            # Guarda a nova senha em texto para exibir na mensagem de sucesso
+                            st.session_state[f"nova_senha_{login['id']}"] = nova_senha
+                            # Força o recarregamento da página para buscar os dados atualizados do banco
+                            st.rerun()
+
+                    # Exibe a nova senha gerada após o reset
+                    if f"nova_senha_{login['id']}" in st.session_state:
+                        st.success(f"Nova senha para **{login['usuario']}**: `{st.session_state[f'nova_senha_{login["id"]}']}` (copie e guarde em local seguro)")
+                        # Limpa a chave da sessão para não mostrar a mensagem novamente
+                        del st.session_state[f"nova_senha_{login['id']}"]
+
+    # ==============================================================================
+    # ABA 18: Registro de Peças
+    # ==============================================================================
+    with tab18:
+        render_registro_de_pecas(conn)

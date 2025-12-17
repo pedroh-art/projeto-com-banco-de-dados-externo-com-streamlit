@@ -32,6 +32,18 @@ from .compromisso import (
     atualizar_compromisso,
     excluir_compromisso
 )
+from .reclamacao import (
+    criar_reclamacao,
+    listar_reclamacoes,
+    marcar_reclamacao_como_lida,
+    excluir_reclamacao
+)
+from .momento import (
+    upload_momento,
+    listar_momentos,
+    excluir_momento
+)
+
 
 __all__ = [
     # Integrante
@@ -46,5 +58,11 @@ __all__ = [
     'listar_tarefas_por_status', 'obter_quadro_kanban',
     
     # Compromisso
-    'criar_compromisso', 'listar_compromissos', 'atualizar_compromisso', 'excluir_compromisso'
+    'criar_compromisso', 'listar_compromissos', 'atualizar_compromisso', 'excluir_compromisso',
+
+    # Reclamação
+    'criar_reclamacao', 'listar_reclamacoes', 'marcar_reclamacao_como_lida', 'excluir_reclamacao'
+,
+    # Momentos
+    'upload_momento', 'listar_momentos', 'excluir_momento'
 ]
