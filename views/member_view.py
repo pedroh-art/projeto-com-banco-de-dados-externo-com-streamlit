@@ -6,7 +6,7 @@ def render_member_view(conn, regras):
     """
     Renderiza a interface para membros logados.
     """
-    st.set_page_config(page_title="Painel do Membro - Dino-Tech", layout="centered")
+    st.set_page_config(page_title="Painel do Membro - Dino-Tech", page_icon="🦖", layout="centered")
     st.markdown(f"<h1 style='color:#FFD700; text-align:center;'>🚀 Painel do Membro - Dino-Tech 🚀</h1>", unsafe_allow_html=True)
     
     st.markdown(f"👤 Logado como: **{st.session_state.usuario_logado}**")

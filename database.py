@@ -8,6 +8,8 @@ def init_connection() -> Client:
     armazenadas nos segredos do Streamlit.
     """
     url = st.secrets["supabase"]["url"]
+    # SEGURANÇA: Use a chave 'service_role' no secrets.toml para que o app tenha permissão de admin.
+    # Em seguida, bloqueie a escrita para a chave 'anon' nas políticas RLS do Supabase.
     key = st.secrets["supabase"]["key"]
     return create_client(url, key)
 

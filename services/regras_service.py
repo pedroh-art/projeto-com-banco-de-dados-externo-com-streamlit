@@ -35,3 +35,19 @@ def salvar_regras(conn, regras: dict):
     except Exception as e:
         print(f"Erro ao salvar regras no Supabase: {e}")
         return False
+
+
+def criar_regras(conn, regras: dict):
+    """
+    Salva ou atualiza o dicionário `regras` no banco de dados Supabase.
+    """
+    try:
+        # O método 'upsert' é perfeito aqui: ele insere se não existir, ou atualiza se já existir.
+        conn.table("regras").insert({
+            "id": REGRAS_ID,
+            "conteudo": regras
+        }).execute()
+        return True
+    except Exception as e:
+        print(f"Erro ao salvar regras no Supabase: {e}")
+        return False
