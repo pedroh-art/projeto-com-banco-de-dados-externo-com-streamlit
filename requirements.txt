@@ -3,3 +3,5 @@ pushbullet.py
 bcrypt
 supabase
 Babel
+pandas
+fpdf

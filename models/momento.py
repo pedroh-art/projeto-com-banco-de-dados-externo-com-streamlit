@@ -19,11 +19,14 @@ def upload_momento(conn, file, descricao, integrante_id):
         res_url = conn.storage.from_(bucket_name).get_public_url(file_path)
         
         # 3. Insere os dados na tabela 'momentos'
-        conn.table("momentos").insert({
+        dados = {
             "descricao": descricao.strip(),
-            "integrante_id": integrante_id,
             "url_imagem": res_url
-        }).execute()
+        }
+        if integrante_id is not None:
+            dados["integrante_id"] = integrante_id
+            
+        conn.table("momentos").insert(dados).execute()
         
         return True
     except Exception as e:

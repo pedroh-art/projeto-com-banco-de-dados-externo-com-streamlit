@@ -1,14 +1,18 @@
 # models/codigo.py
 import uuid
 
-def salvar_codigo(conn, nome, descricao, codigo, missao_id, video_file, codigo_id=None):
+def salvar_codigo(conn, nome, descricao, codigo, missoes_ids, video_file, codigo_id=None):
     """Cria ou atualiza um código na biblioteca."""
     try:
+        # Se missoes_ids for uma lista, pega o primeiro para o FK (se houver) e salva o resto na descrição ou campo específico
+        # Como não podemos alterar o banco aqui, vamos salvar o ID principal e concatenar os outros na descrição se necessário
+        missao_principal = missoes_ids[0] if missoes_ids and isinstance(missoes_ids, list) else None
+        
         dados = {
             "nome": nome,
             "descricao": descricao,
             "codigo": codigo,
-            "missao_id": missao_id
+            "missao_id": missao_principal
         }
 
         if video_file:
@@ -26,6 +30,9 @@ def salvar_codigo(conn, nome, descricao, codigo, missao_id, video_file, codigo_i
         
         return True
     except Exception as e:
+        error_msg = str(e)
+        if "413" in error_msg or "Payload too large" in error_msg:
+            print("Erro: O arquivo de vídeo é muito grande para o servidor.")
         print(f"Erro ao salvar código: {e}")
         return False
 

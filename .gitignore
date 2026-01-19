@@ -1,10 +1,12 @@
-# .gitignore
+# Arquivos de ambiente e segredos (NUNCA SUBIR PARA O GITHUB)
+.streamlit/secrets.toml
+.env
+
+# Arquivos compilados e cache do Python
 __pycache__/
 *.pyc
-.env
-.streamlit/secrets.toml
-migrar_regras.py
-*.db
-.regras.json.swp
-.DS_Store
-teste.py
+
+# Ambientes virtuais
+venv/
+env/
+.venv/

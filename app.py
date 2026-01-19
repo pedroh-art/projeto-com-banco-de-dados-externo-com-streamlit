@@ -3,7 +3,7 @@ import streamlit as st
 from auth import initialize_session_state, login_usuario, is_admin
 from database import supabase as conn
 from services.regras_service import carregar_regras
-from views import render_membro_view, render_admin_view
+from views import render_membro_view, render_admin_view, render_funcionario_view
 from views.shared_components import LOGO_DINO_TECH
 initialize_session_state()
 
@@ -95,7 +95,15 @@ if st.session_state.usuario_logado is None:
             st.error("❌ Usuário ou senha inválidos.")
     st.stop()
 
-if not is_admin():
-    render_membro_view(conn, regras, st.session_state.usuario_logado)
-else:
+if st.session_state.tipo_usuario == "administrador":
     render_admin_view(conn, regras)
+elif st.session_state.tipo_usuario == "funcionario":
+    # Busca permissões específicas do funcionário no banco
+    try:
+        res = conn.table("usuarios").select("permissoes").eq("usuario", st.session_state.usuario_logado).maybe_single().execute()
+        perms = res.data.get("permissoes", []) if res.data else []
+    except:
+        perms = []
+    render_funcionario_view(conn, regras, st.session_state.usuario_logado, perms)
+else:
+    render_membro_view(conn, regras, st.session_state.usuario_logado)

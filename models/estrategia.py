@@ -65,7 +65,7 @@ def excluir_base_robo(conn):
         print(f"Erro ao excluir base do robô: {e}")
         return False
 
-def adicionar_acessorio(conn, nome, descricao, missao_id, foto_file):
+def adicionar_acessorio(conn, nome, descricao, missoes_ids, foto_file):
     """Adiciona um novo acessório a uma missão."""
     try:
         foto_url = None
@@ -75,10 +75,13 @@ def adicionar_acessorio(conn, nome, descricao, missao_id, foto_file):
             conn.storage.from_(bucket_name).upload(file=foto_file.getvalue(), path=file_path)
             foto_url = conn.storage.from_(bucket_name).get_public_url(file_path)
 
+        # Lógica para múltiplas missões: Pega a primeira como FK principal e salva as outras na descrição
+        missao_principal = missoes_ids[0] if missoes_ids and isinstance(missoes_ids, list) else None
+        
         conn.table("acessorios").insert({
             "nome": nome,
             "descricao": descricao,
-            "missao_id": missao_id,
+            "missao_id": missao_principal,
             "foto_url": foto_url
         }).execute()
         return True

@@ -3,6 +3,7 @@ import streamlit as st
 import base64
 import os
 import datetime
+import pandas as pd
 from models.credencial import (
     criar_credencial, listar_credenciais, excluir_credencial
 )
@@ -32,6 +33,14 @@ from models.integrante import (
 from models.banco import (
     listar_itens, adicionar_item, excluir_item, total_preco, totalizar_dinheiro_atual, atualizar_dinheiro_atual, registrar_transacao, listar_transacoes, excluir_transacao
 )
+from models.planejamento import listar_marcos, criar_marco, atualizar_status_marco, excluir_marco, obter_roteiro, salvar_roteiro, salvar_avaliacao_treino, listar_avaliacoes_treino, excluir_avaliacao_treino
+import time
+from models.compromisso import listar_compromissos
+from desempenho import registrar_round, obter_dados_rounds, obter_estatisticas_missoes, excluir_round
+from conhecimento import salvar_artigo_wiki, listar_wiki, salvar_risco, listar_riscos, excluir_risco, salvar_topico_treino, listar_treinamentos, salvar_decisao_estrategica, salvar_progresso_treino, listar_progresso_treino, excluir_artigo_wiki, excluir_topico_treino
+from audit import registrar_log
+from collections import defaultdict
+from babel.dates import format_date
 
 def carregar_imagem_local(caminho_arquivo):
     """
@@ -708,8 +717,9 @@ def render_estrategia_robo(conn, read_only=False):
                 if not missoes:
                     st.warning("Cadastre as missões primeiro para poder adicionar acessórios.")
                 else:
-                    missao_selecionada_id = st.selectbox(
-                        "Para qual missão é este acessório?",
+                    # Alterado para multiselect para permitir múltiplas missões
+                    missoes_selecionadas_ids = st.multiselect(
+                        "Para quais missões é este acessório?",
                         options=[m['id'] for m in missoes],
                         format_func=lambda x: next((m['nome'] for m in missoes if m['id'] == x), "N/A")
                     )
@@ -718,9 +728,16 @@ def render_estrategia_robo(conn, read_only=False):
                     foto_acessorio = st.file_uploader("Foto do Acessório (opcional)", type=["jpg", "jpeg", "png"])
 
                     if st.form_submit_button("📥 Adicionar Acessório"):
-                        if nome_acessorio.strip() and missao_selecionada_id:
-                            if adicionar_acessorio(conn, nome_acessorio, desc_acessorio, missao_selecionada_id, foto_acessorio):
+                        if nome_acessorio.strip() and missoes_selecionadas_ids:
+                            # Formata a descrição com os nomes de todas as missões selecionadas
+                            nomes_missoes = [next((m['nome'] for m in missoes if m['id'] == mid), "N/A") for mid in missoes_selecionadas_ids]
+                            desc_completa = desc_acessorio
+                            if len(nomes_missoes) > 0:
+                                desc_completa += f"\n\n🔗 **Vinculado às missões:** {', '.join(nomes_missoes)}"
+
+                            if adicionar_acessorio(conn, nome_acessorio, desc_completa, missoes_selecionadas_ids, foto_acessorio):
                                 st.success("✅ Acessório adicionado!")
+                                st.rerun()
                             else:
                                 st.error("❌ Erro ao adicionar acessório.")
                         else:
@@ -753,10 +770,9 @@ def render_biblioteca_codigos(conn, read_only=False):
                 nome_codigo = st.text_input("Nome do Programa (Ex: Saída da Base, Missão 5)")
                 
                 missao_opcoes = {m['id']: m['nome'] for m in missoes}
-                missao_opcoes[None] = "(Nenhuma)" # Adiciona opção para não vincular
                 
-                missao_selecionada_id = st.selectbox(
-                    "Vincular a qual missão? (opcional)",
+                missoes_selecionadas_ids = st.multiselect(
+                    "Vincular a quais missões?",
                     options=list(missao_opcoes.keys()),
                     format_func=lambda x: missao_opcoes[x]
                 )
@@ -764,10 +780,17 @@ def render_biblioteca_codigos(conn, read_only=False):
                 desc_codigo = st.text_area("Descrição (o que este código faz?)")
                 codigo_python = st.text_area("Cole o código Python aqui", height=300, placeholder="import spike\n\n...")
                 video_teste = st.file_uploader("Vídeo/GIF de teste (opcional)", type=["mp4", "mov", "gif"])
+                st.caption("⚠️ Nota: Vídeos muito grandes podem causar erro ao salvar. Tente manter abaixo de 10MB.")
 
                 if st.form_submit_button("💾 Salvar Código"):
                     if nome_codigo.strip() and codigo_python.strip():
-                        if salvar_codigo(conn, nome_codigo, desc_codigo, codigo_python, missao_selecionada_id, video_teste):
+                        # Formata a descrição com os nomes de todas as missões selecionadas
+                        nomes_missoes = [missao_opcoes[mid] for mid in missoes_selecionadas_ids if mid in missao_opcoes]
+                        desc_completa = desc_codigo
+                        if len(nomes_missoes) > 0:
+                            desc_completa += f"\n\n🔗 **Vinculado às missões:** {', '.join(nomes_missoes)}"
+
+                        if salvar_codigo(conn, nome_codigo, desc_completa, codigo_python, missoes_selecionadas_ids, video_teste):
                             st.success("✅ Código salvo na biblioteca!")
                         else:
                             st.error("❌ Erro ao salvar o código.")
@@ -802,7 +825,7 @@ def render_biblioteca_codigos(conn, read_only=False):
                             st.success("✅ Código excluído com sucesso!")
                             st.rerun()
 
-def render_projeto_inovacao(conn, read_only=False):
+def render_projeto_inovacao(conn, read_only=False, usuario_id=None):
     """Renderiza a interface para o Projeto de Inovação."""
     st.markdown("<h2 style='color:#FF69B4;'>🧩 Projeto de Inovação</h2>", unsafe_allow_html=True)
     
@@ -841,6 +864,27 @@ def render_projeto_inovacao(conn, read_only=False):
                 st.rerun()
             else:
                 st.error("❌ Erro ao salvar o projeto.")
+
+    # --- Seção de Linha do Tempo (Evolução) ---
+    st.markdown("### ⏳ Linha do Tempo da Temporada")
+    st.info("Registre a evolução do projeto: da primeira ideia ao resultado final.")
+    
+    # Reutiliza o sistema de momentos, mas filtrado/marcado visualmente
+    from models.momento import listar_momentos, upload_momento, excluir_momento
+    
+    if not read_only:
+        with st.expander("➕ Adicionar Marco na Linha do Tempo"):
+            with st.form("form_timeline_pi"):
+                desc_marco = st.text_input("Descrição do Marco (Ex: Primeiro protótipo falhou)")
+                tipo_marco = st.selectbox("Tipo", ["Ideia Inicial", "Falha/Aprendizado", "Melhoria", "Versão Final"])
+                foto_marco = st.file_uploader("Foto (Antes/Depois)", type=["jpg", "png"])
+                if st.form_submit_button("Registrar Marco"):
+                    if upload_momento(conn, foto_marco, f"[TIMELINE: {tipo_marco}] {desc_marco}", usuario_id):
+                        st.success("Marco registrado!")
+                        st.rerun()
+    
+    # Visualização da Timeline (Implementação simplificada usando momentos filtrados)
+    # (O código de listagem de momentos já existe em outra aba, aqui focamos no input)
 
     st.markdown("---")
 
@@ -916,7 +960,7 @@ def render_controle_acompanhamento(conn, can_edit_checklist=False, can_edit_reun
             for item in itens:
                 col1, col2, col3 = st.columns([0.1, 2, 0.5])
                 with col1:
-                    novo_status = st.checkbox("", value=item['status'], key=f"check_{item['id']}", disabled=not can_edit_checklist)
+                    novo_status = st.checkbox("Concluído", value=item['status'], key=f"check_{item['id']}", disabled=not can_edit_checklist, label_visibility="collapsed")
                     if novo_status != item['status']:
                         atualizar_status_checklist(conn, item['id'], novo_status)
                         st.rerun()
@@ -1054,15 +1098,29 @@ def render_banco_da_dino_tech(conn, pode_editar=False):
             with st.expander("➕ Registrar Nova Transação"):
                 with st.form("form_nova_transacao", clear_on_submit=True):
                     
+                    # Adicionado seletor de item
+                    itens_disponiveis = listar_itens(conn)
+                    opcoes_itens = {i['id']: f"{i['nome']} (R$ {i['preco']})" for i in itens_disponiveis}
+                    opcoes_itens[None] = "Outro / Avulso"
+                    
+                    item_selecionado_id = st.selectbox("Produto/Item (Opcional)", options=list(opcoes_itens.keys()), format_func=lambda x: opcoes_itens[x])
+                    
                     tipo = st.selectbox("tipo de pagamento", options=["saida", "entrada"], format_func=lambda x: "💸 Saída" if x == "saida" else "💰 Entrada")
                     valor_pago = st.number_input("Valor Pago", min_value=0.0, step=1.0)
                     data_transacao = st.date_input("Data da Transação", value=datetime.date.today())
-                    data_transacao = data_transacao.strftime("%Y-%m-%d")
+                    data_transacao_str = data_transacao.strftime("%Y-%m-%d")
                     descricao = st.text_area("Descrição da Transação")
                     
                     if st.form_submit_button("💾 Registrar Transação"):
-                        if registrar_transacao(conn, tipo, valor_pago, descricao, data_transacao):
+                        # Adiciona o nome do item à descrição, já que não temos coluna item_id no banco
+                        desc_final = descricao
+                        if item_selecionado_id:
+                            desc_final = f"{descricao} | [Item: {opcoes_itens[item_selecionado_id]}]"
+                        
+                        if registrar_transacao(conn, tipo, valor_pago, desc_final, data_transacao_str, item_selecionado_id):
                             st.toast("✅ Transação registrada com sucesso!", icon="✅")
+                            time.sleep(1)
+                            st.rerun()
                         else:
                             st.toast("❌ Erro ao registrar a transação.", icon="❌")    
         listar_transacoes_list = listar_transacoes(conn)
@@ -1070,20 +1128,548 @@ def render_banco_da_dino_tech(conn, pode_editar=False):
             st.info("Nenhuma transação registrada.")
         else:
             for transacao in listar_transacoes_list:
-                data_formatada = datetime.datetime.strptime(
-                    transacao['data_criacao'],
-                    "%Y-%m-%dT%H:%M:%S"
-                    )
-                item_info = next(
-                (item for item in listar_itens(conn) if item['id'] == transacao['id']),
-                None
-            )
+                # Correção na formatação da data
+                try:
+                    # Tenta formato completo ISO
+                    data_obj = datetime.datetime.fromisoformat(transacao['data_criacao'])
+                except ValueError:
+                    try:
+                        # Tenta apenas data YYYY-MM-DD
+                        data_obj = datetime.datetime.strptime(transacao['data_criacao'], "%Y-%m-%d")
+                    except:
+                        data_obj = datetime.datetime.now()
+                
+                data_formatada = data_obj.strftime("%d/%m/%Y")
+                
+                # Correção na busca do nome do item (usando item_id correto se existir, ou fallback)
+                item_nome = "Transação Avulsa"
+                if transacao.get('item_id'):
+                    item_match = next((i for i in listar_itens(conn) if i['id'] == transacao['item_id']), None)
+                    if item_match:
+                        item_nome = item_match['nome']
+                
+                # Exibe descrição e detalhes corretamente
+                titulo = f"**{data_formatada}** - {item_nome}"
+                if transacao['tipo'] == 'entrada':
+                    titulo = f"💰 {titulo}"
+                else:
+                    titulo = f"💸 {titulo}"
 
-                item_nome = item_info['nome'] if item_info else "Item Desconhecido"
-                with st.expander(f"**{data_formatada}** - {item_nome}"):
+                with st.expander(titulo):
                     st.markdown(f"**Valor Pago:** R$ {transacao['valor']:.2f}")
+                    if transacao.get('descricao'):
+                        st.markdown(f"**Descrição:** {transacao['descricao']}")
+                    
                     if pode_editar:
                         if st.button("🗑️ Excluir Registro", key=f"del_transacao_{transacao['id']}", type="primary", help="Apagar este registro de transação"):
                             excluir_transacao(conn, transacao['id'])
                             st.rerun()
+
+def render_roadmap(conn, admin=False):
+    """Renderiza o Roadmap da Temporada."""
+    st.markdown("<h2 style='color:#FFD700;'>🗺️ Roadmap da Temporada</h2>", unsafe_allow_html=True)
+    
+    if admin:
+        with st.expander("➕ Adicionar Marco"):
+            with st.form("novo_marco"):
+                titulo = st.text_input("Título do Marco (Ex: Pesquisa Concluída)")
+                data = st.date_input("Data Limite")
+                if st.form_submit_button("Salvar"):
+                    criar_marco(conn, titulo, data)
+                    st.rerun()
+    
+    marcos = listar_marcos(conn)
+    if not marcos:
+        st.info("Nenhum marco definido.")
+        return
+
+    # Linha do tempo visual simples
+    for marco in marcos:
+        status_color = "green" if marco['status'] == 'concluido' else "orange" if marco['status'] == 'pendente' else "red"
+        check = "✅" if marco['status'] == 'concluido' else "⏳"
+        
+        col1, col2, col3 = st.columns([0.1, 3, 1])
+        with col1:
+            st.markdown(f"## {check}")
+        with col2:
+            st.markdown(f"**{marco['titulo']}**")
+            st.caption(f"📅 {marco['data_limite']}")
+        with col3:
+            if admin:
+                novo_status = st.selectbox("Status", ["pendente", "concluido", "atrasado"], index=["pendente", "concluido", "atrasado"].index(marco['status']), key=f"st_marco_{marco['id']}", label_visibility="collapsed")
+                if novo_status != marco['status']:
+                    atualizar_status_marco(conn, marco['id'], novo_status)
+                    st.rerun()
+                if st.button("🗑️", key=f"del_marco_{marco['id']}"):
+                    excluir_marco(conn, marco['id'])
+                    st.rerun()
+            else:
+                st.markdown(f"*{marco['status'].upper()}*")
+        st.markdown("---")
+
+def render_treino_apresentacao(conn, admin=False):
+    """Renderiza ferramentas de treino de apresentação."""
+    st.markdown("<h2 style='color:#FF4500;'>🎤 Treino de Apresentação</h2>", unsafe_allow_html=True)
+    
+    tab_roteiro, tab_cronometro = st.tabs(["📜 Roteiros Oficiais", "⏱️ Cronômetro & Avaliação"])
+    
+    with tab_roteiro:
+        tipo = st.selectbox("Selecione o Roteiro", ["robo", "pi", "core"], format_func=lambda x: x.upper())
+        conteudo_atual = obter_roteiro(conn, tipo)
+        
+        if admin:
+            novo_conteudo = st.text_area("Editor de Roteiro", value=conteudo_atual, height=400)
+            if st.button("💾 Salvar Roteiro Oficial"):
+                salvar_roteiro(conn, tipo, novo_conteudo)
+                st.success("Roteiro atualizado!")
+        else:
+            st.info("Este é o roteiro oficial. Apenas admins podem editar.")
+            st.markdown(f"```text\n{conteudo_atual}\n```")
+    
+    with tab_cronometro:
+        st.subheader("Simulação de Round")
+        col1, col2, col3 = st.columns(3)
+        tempo_alvo = col1.selectbox("Tempo Alvo", [150, 300], format_func=lambda x: "2:30 (Robô)" if x==150 else "5:00 (Projeto)")
+        
+        # Inicialização das variáveis de estado do cronômetro
+        if "cron_estado" not in st.session_state:
+            st.session_state.cron_estado = "parado" # parado, rodando, pausado
+        if "cron_inicio" not in st.session_state:
+            st.session_state.cron_inicio = 0.0
+        if "cron_acumulado" not in st.session_state:
+            st.session_state.cron_acumulado = 0.0
+        
+        # Lógica de exibição e controle
+        tempo_decorrido = st.session_state.cron_acumulado
+        if st.session_state.cron_estado == "rodando":
+            tempo_decorrido += time.time() - st.session_state.cron_inicio
+
+        restante = tempo_alvo - tempo_decorrido
+        
+        # Exibição do Tempo
+        if restante <= 0:
+            st.error("⏰ TEMPO ESGOTADO!")
+            display_tempo = "00:00"
+        else:
+            mins, segs = divmod(int(restante), 60)
+            display_tempo = f"{mins:02d}:{segs:02d}"
+            if restante < 30:
+                st.warning(f"⚠️ {display_tempo}")
+            else:
+                st.metric("Tempo Restante", display_tempo)
+
+        # Botões de Controle
+        col_btn_start, col_btn_stop = st.columns(2)
+        
+        if st.session_state.cron_estado == "parado":
+            if col2.button("▶️ INICIAR"):
+                st.session_state.cron_estado = "rodando"
+                st.session_state.cron_inicio = time.time()
+                st.session_state.cron_acumulado = 0.0
+                st.rerun()
+        
+        elif st.session_state.cron_estado == "rodando":
+            if col2.button("⏸️ PAUSAR"):
+                st.session_state.cron_estado = "pausado"
+                st.session_state.cron_acumulado = tempo_decorrido
+                st.rerun()
+            if col3.button("⏹️ RESETAR"):
+                st.session_state.cron_estado = "parado"
+                st.session_state.cron_acumulado = 0.0
+                st.rerun()
+        
+        elif st.session_state.cron_estado == "pausado":
+            st.info("⏸️ Cronômetro Pausado")
+            if col2.button("▶️ CONTINUAR"):
+                st.session_state.cron_estado = "rodando"
+                st.session_state.cron_inicio = time.time()
+                st.rerun()
+            if col3.button("⏹️ RESETAR"):
+                st.session_state.cron_estado = "parado"
+                st.session_state.cron_acumulado = 0.0
+                st.rerun()
+
+        st.markdown("---")
+        if admin:
+            st.write("### 📝 Avaliação Rápida do Treino")
+            with st.form("aval_treino", clear_on_submit=True):
+                clareza = st.slider("Clareza da Fala", 1, 5)
+                equipe = st.slider("Trabalho em Equipe", 1, 5)
+                obs = st.text_area("Observações")
+                if st.form_submit_button("Salvar Avaliação"):
+                    if salvar_avaliacao_treino(conn, "treino", tempo_alvo, clareza, equipe, obs):
+                        st.success("✅ Avaliação salva com sucesso!")
+                        st.rerun()
+                    else:
+                        st.error("❌ Erro ao salvar. Verifique se a tabela 'treinos_log' existe no banco.")
+        
+        # Histórico Rápido
+        st.markdown("#### 📜 Histórico Recente")
+        historico = listar_avaliacoes_treino(conn)
+        if historico:
+            for h in historico[:5]: # Mostra os 5 últimos
+                with st.expander(f"Treino ({h.get('tempo')}s) - Clareza: {h.get('clareza')}/5"):
+                    st.write(f"**Obs:** {h.get('obs')}")
+                    st.caption(f"Data: {h.get('created_at')}")
+                    if admin:
+                        if st.button("🗑️ Excluir Avaliação", key=f"del_aval_{h['id']}"):
+                            if excluir_avaliacao_treino(conn, h['id']):
+                                st.success("Avaliação excluída!")
+                                st.rerun()
+        else:
+            st.caption("Nenhum treino avaliado ainda.")
+            
+        # Auto-refresh movido para o final para garantir que a UI seja renderizada antes
+        if st.session_state.cron_estado == "rodando":
+            time.sleep(0.1)
+            st.rerun()
+
+def render_kanban_component(conn):
+    """Renderiza uma versão simplificada do Kanban para visualização."""
+    # (Implementação simplificada se necessário, ou usar direto no view)
+    pass
+
+def render_compromissos_component(conn, admin=False):
+    """Renderiza a lista de compromissos (Reutilizável)."""
+    st.markdown("<h2 style='color:#2E8B57;'>📅 Cronograma da Equipe</h2>", unsafe_allow_html=True)
+    compromissos = listar_compromissos(conn)
+    if compromissos:
+        comp_por_data = defaultdict(list)
+        for cid, titulo, desc, data, inicio, fim in compromissos:
+            comp_por_data[data].append((cid, titulo, desc, inicio, fim))
+        
+        for data_str in sorted(comp_por_data.keys()):
+            data_obj = datetime.datetime.strptime(data_str, "%Y-%m-%d")
+            data_formatada = format_date(data_obj, "d 'de' MMMM 'de' y", locale='pt_BR')
+            st.markdown(f"### 🗓️ {data_formatada}")
+            for cid, titulo, desc, inicio, fim in comp_por_data[data_str]:
+                with st.expander(f"📌 **{titulo}** — {inicio} a {fim}"):
+                    if desc:
+                        st.write(desc)
                     
+                    # Se tiver permissão de admin/edição, mostra botões
+                    if admin:
+                        if st.button("🗑️ Excluir", key=f"del_comp_shared_{cid}"):
+                            from models.compromisso import excluir_compromisso
+                            excluir_compromisso(conn, cid)
+                            st.rerun()
+    else:
+        st.info("Nenhum compromisso agendado.")
+    
+    if admin:
+        st.info("💡 Para criar ou editar compromissos detalhadamente, use o painel de Membro (Gerente de Tempo). Aqui você pode visualizar e excluir.")
+
+# ==============================================================================
+# NOVOS COMPONENTES (Métricas, Wiki, Riscos)
+# ==============================================================================
+
+def render_analise_desempenho(conn, usuario_logado, admin=False):
+    """Renderiza gráficos e inputs para métricas do robô."""
+    st.markdown("<h2 style='color:#00BFFF;'>🤖 Métricas de Desempenho</h2>", unsafe_allow_html=True)
+    
+    tab_input, tab_dash = st.tabs(["📝 Registrar Round", "📊 Dashboard Analítico"])
+    
+    missoes = listar_missoes(conn)
+    
+    with tab_input:
+        with st.form("form_round"):
+            st.subheader("Dados do Round")
+            col1, col2 = st.columns(2)
+            pontos = col1.number_input("Pontuação Total", min_value=0, step=5, help="Pontuação final calculada")
+            versao = col2.text_input("Versão do Robô/Código", value="v1.0", help="Ex: v1.0, v1.1, Garra Nova")
+            video = st.text_input("Link do Vídeo (Drive/Youtube)")
+            notas = st.text_area("O que aconteceu? (Falhas, sucessos, observações)")
+            
+            st.markdown("#### Status por Missão")
+            status_dict = {}
+            if missoes:
+                cols = st.columns(3)
+                for i, m in enumerate(missoes):
+                    with cols[i % 3]:
+                        status_dict[m['nome']] = st.selectbox(
+                            f"{m['nome']}", 
+                            ["sucesso", "falha", "nao_tentou"], 
+                            index=2,
+                            key=f"st_m_{m['id']}"
+                        )
+            
+            if st.form_submit_button("💾 Salvar Round"):
+                if registrar_round(conn, pontos, video, notas, status_dict, versao):
+                    registrar_log(conn, usuario_logado, "Registrou Round", f"Pontos: {pontos}")
+                    st.success("Round registrado com sucesso!")
+                else:
+                    st.error("Erro ao salvar round.")
+
+    with tab_dash:
+        dados_rounds = obter_dados_rounds(conn)
+        dados_missoes = obter_estatisticas_missoes(conn)
+        
+        if dados_rounds:
+            df_rounds = pd.DataFrame(dados_rounds)
+            df_rounds['data_hora'] = pd.to_datetime(df_rounds['data_hora'])
+            
+            st.subheader("📈 Evolução da Pontuação")
+            st.line_chart(df_rounds.set_index('data_hora')['pontuacao_total'])
+            
+            # Gráfico de Versão x Pontuação Média
+            if 'versao_robo' in df_rounds.columns:
+                st.subheader("📊 Desempenho por Versão")
+                avg_by_version = df_rounds.groupby('versao_robo')['pontuacao_total'].mean()
+                st.bar_chart(avg_by_version)
+                melhor_versao = avg_by_version.idxmax()
+                st.success(f"🏆 Melhor versão até agora: **{melhor_versao}** ({avg_by_version.max():.1f} pts)")
+            
+            avg_pts = df_rounds['pontuacao_total'].mean()
+            max_pts = df_rounds['pontuacao_total'].max()
+            st.metric("Média de Pontos", f"{avg_pts:.1f}", f"Max: {max_pts}")
+            
+            if dados_missoes:
+                st.subheader("🎯 Taxa de Sucesso por Missão")
+                df_m = pd.DataFrame(dados_missoes)
+                # Filtra apenas tentativas (ignora 'nao_tentou')
+                df_tentativas = df_m[df_m['status'] != 'nao_tentou']
+                
+                if not df_tentativas.empty:
+                    resumo = df_tentativas.groupby('missao_nome')['status'].value_counts(normalize=True).unstack().fillna(0)
+                    if 'sucesso' in resumo.columns:
+                        resumo['sucesso_pct'] = resumo['sucesso'] * 100
+                        st.bar_chart(resumo['sucesso_pct'])
+                        
+                        # Identificar missões instáveis
+                        instaveis = resumo.sort_values('sucesso_pct').head(3)
+                        st.warning(f"⚠️ Missões mais instáveis: {', '.join(instaveis.index.tolist())}")
+            
+            st.markdown("---")
+            st.subheader("📜 Histórico de Rounds")
+            
+            # Ordena por data decrescente para exibição
+            rounds_sorted = sorted(dados_rounds, key=lambda x: x['data_hora'], reverse=True)
+            
+            for r in rounds_sorted:
+                try:
+                    dt_str = datetime.datetime.fromisoformat(r['data_hora']).strftime("%d/%m/%Y %H:%M")
+                except:
+                    dt_str = r['data_hora']
+                
+                with st.expander(f"{dt_str} - {r['pontuacao_total']} pts ({r.get('versao_robo', 'v?')})"):
+                    st.write(f"**Notas:** {r.get('notas', '-')}")
+                    if r.get('video_url'):
+                        st.write(f"**Vídeo:** {r['video_url']}")
+                    
+                    if admin:
+                        if st.button("🗑️ Excluir Round", key=f"del_round_{r['id']}"):
+                            if excluir_round(conn, r['id']):
+                                st.success("Round excluído!")
+                                st.rerun()
+                            else:
+                                st.error("Erro ao excluir.")
+        else:
+            st.info("Registre rounds para ver os gráficos.")
+
+def render_wiki(conn, usuario_logado, admin=False):
+    """Renderiza a Wiki Interna."""
+    st.markdown("<h2 style='color:#FFD700;'>📚 Wiki & Gestão de Conhecimento</h2>", unsafe_allow_html=True)
+    
+    tab_ler, tab_escrever, tab_decisoes = st.tabs(["📖 Ler Artigos", "✍️ Escrever Novo", "⚖️ Registro de Decisões"])
+    
+    with tab_decisoes:
+        st.info("Registre decisões importantes para evitar 'reinventar a roda'.")
+        with st.form("form_decisao"):
+            decisao = st.text_input("Qual foi a decisão tomada?")
+            alternativas = st.text_area("Quais alternativas foram descartadas?")
+            justificativa = st.text_area("Por que escolhemos isso? (Dados/Testes)")
+            if st.form_submit_button("Registrar Decisão"):
+                if salvar_decisao_estrategica(conn, decisao, alternativas, justificativa, usuario_logado):
+                    st.success("Decisão registrada na Wiki!")
+                    st.rerun()
+
+    with tab_escrever:
+        with st.form("nova_wiki"):
+            titulo = st.text_input("Título (Ex: Como calibrar o giroscópio)")
+            categoria = st.selectbox("Categoria", ["Programação", "Mecânica", "Estratégia", "Core Values", "Outros"])
+            conteudo = st.text_area("Conteúdo (Markdown suportado)", height=300)
+            
+            if st.form_submit_button("Publicar Artigo"):
+                if titulo and conteudo:
+                    if salvar_artigo_wiki(conn, titulo, conteudo, categoria, usuario_logado):
+                        st.success("Artigo publicado!")
+                        st.rerun()
+                else:
+                    st.warning("Preencha título e conteúdo.")
+
+    with tab_ler:
+        artigos = listar_wiki(conn)
+        if artigos:
+            filtro = st.selectbox("Filtrar por Categoria", ["Todas"] + list(set(a['categoria'] for a in artigos)))
+            
+            for art in artigos:
+                if filtro == "Todas" or art['categoria'] == filtro:
+                    with st.expander(f"📘 {art['titulo']} ({art['categoria']})"):
+                        st.markdown(f"*Por {art['autor']} em {format_date(datetime.datetime.fromisoformat(art['created_at']), locale='pt_BR')}*")
+                        st.markdown(art['conteudo'])
+                        
+                        if admin:
+                            if st.button("🗑️ Excluir Artigo", key=f"del_wiki_{art['id']}"):
+                                if excluir_artigo_wiki(conn, art['id']):
+                                    st.success("Artigo excluído!")
+                                    st.rerun()
+        else:
+            st.info("A Wiki está vazia. Seja o primeiro a contribuir!")
+
+def render_gestao_riscos(conn, usuario_logado, read_only=False):
+    """Renderiza a Matriz de Riscos."""
+    st.markdown("<h2 style='color:#FF4500;'>🚨 Gestão de Riscos</h2>", unsafe_allow_html=True)
+    
+    if not read_only:
+        with st.expander("➕ Adicionar Novo Risco"):
+            with st.form("novo_risco"):
+                desc = st.text_input("Descrição do Risco (Ex: Quebra da garra principal)")
+                col1, col2 = st.columns(2)
+                prob = col1.selectbox("Probabilidade", ["Baixa", "Média", "Alta"])
+                impacto = col2.selectbox("Impacto", ["Baixo", "Médio", "Alto"])
+                plano = st.text_area("Plano de Mitigação (Plano B / Plano C)")
+                missao_afetada = st.text_input("Missão Afetada (Opcional)")
+                
+                if st.form_submit_button("Registrar Risco"):
+                    plano_final = f"{plano} (Afeta: {missao_afetada})" if missao_afetada else plano
+                    if salvar_risco(conn, desc, prob, impacto, plano_final):
+                        registrar_log(conn, usuario_logado, "Registrou Risco", desc)
+                        st.success("Risco registrado.")
+                        st.rerun()
+
+    riscos = listar_riscos(conn)
+    if riscos:
+        # Matriz visual simples
+        st.markdown("### Mapa de Riscos Ativos")
+        for r in riscos:
+            cor = "red" if r['impacto'] == "Alto" and r['probabilidade'] == "Alta" else "orange" if r['impacto'] == "Alto" or r['probabilidade'] == "Alta" else "green"
+            st.markdown(f"""
+            <div style="padding:10px; border-left: 5px solid {cor}; background: rgba(255,255,255,0.05); margin-bottom:10px; border-radius:5px;">
+                <strong>{r['descricao']}</strong><br>
+                <small>Prob: {r['probabilidade']} | Imp: {r['impacto']}</small><br>
+                <em>Plano B: {r['plano_mitigacao']}</em>
+            </div>
+            """, unsafe_allow_html=True)
+            if not read_only:
+                if st.button("Resolver/Excluir", key=f"del_risco_{r['id']}"):
+                    excluir_risco(conn, r['id'])
+                    st.rerun()
+    else:
+        st.success("Nenhum risco mapeado (ou estamos muito otimistas!).")
+
+def render_treinamento(conn, usuario_id=None, admin=False):
+    """Renderiza trilhas de treinamento."""
+    st.markdown("<h2 style='color:#9370DB;'>🧑‍🏫 Capacitação Interna</h2>", unsafe_allow_html=True)
+    
+    tab_trilhas, tab_admin = st.tabs(["🎓 Trilhas & Checklists", "⚙️ Gerenciar Trilhas"])
+    
+    with tab_admin:
+        # Todos podem adicionar capacitação agora
+        with st.form("novo_treino", clear_on_submit=True):
+            titulo = st.text_input("Título do Tópico")
+            nivel = st.selectbox("Nível", ["Básico", "Intermediário", "Avançado"])
+            link = st.text_input("Link do Material (YouTube, Drive, PDF)")
+            
+            if st.form_submit_button("Adicionar Tópico"):
+                # Garante que o link seja externo para não redirecionar para o login
+                if link and not link.startswith(("http://", "https://")):
+                    link = f"https://{link}"
+                
+                salvar_topico_treino(conn, titulo, nivel, link)
+                st.toast("Tópico adicionado com sucesso!", icon="✅")
+                time.sleep(1)
+                st.rerun()
+
+    with tab_trilhas:
+        # Carrega progresso
+        progresso = listar_progresso_treino(conn)
+        # Cria set de IDs validados para busca rápida, filtrando pelo usuário atual
+        validados = {p['treino_id'] for p in progresso if p.get('validado') and (p.get('integrante_id') == usuario_id if usuario_id else False)}
+
+        treinos = listar_treinamentos(conn)
+        if treinos:
+            # Agrupar por nível
+            por_nivel = defaultdict(list)
+            for t in treinos:
+                por_nivel[t['nivel']].append(t)
+            
+            for nivel in sorted(por_nivel.keys()):
+                st.subheader(nivel)
+                for t in por_nivel[nivel]:
+                    if admin:
+                        col_check, col_info, col_del = st.columns([0.1, 0.8, 0.1])
+                    else:
+                        col_check, col_info = st.columns([0.1, 0.9])
+                        
+                    is_done = t['id'] in validados
+                    with col_check:
+                        # Checkbox visual ou funcional se tiver backend
+                        st.checkbox("Concluído", value=is_done, key=f"chk_tr_{t['id']}", disabled=True, label_visibility="collapsed")
+                    with col_info:
+                        # Corrige visualização de links antigos sem protocolo
+                        link_display = t['link_material']
+                        if link_display and not link_display.startswith(("http://", "https://")):
+                            link_display = f"https://{link_display}"
+                            
+                        st.markdown(f"**[{t['titulo']}]({link_display})**")
+                        if not is_done and usuario_id:
+                            if st.button(f"Validar '{t['titulo']}'", key=f"val_tr_{t['id']}"):
+                                salvar_progresso_treino(conn, t['id'], usuario_id, True)
+                                st.rerun()
+                        elif not is_done and not usuario_id:
+                            st.caption("Acesse como membro para validar.")
+                    
+                    if admin:
+                        with col_del:
+                            if st.button("🗑️", key=f"del_tr_{t['id']}", help="Excluir este tópico"):
+                                excluir_topico_treino(conn, t['id'])
+                                st.rerun()
+        else:
+            st.info("Nenhum treinamento cadastrado.")
+
+def render_tela_guerra_torneio(conn):
+    """Tela simplificada para uso durante o torneio (Modo Offline/Rápido)."""
+    st.markdown("# ⚔️ WAR ROOM - TORNEIO")
+
+    # Inicializa estado local para persistência durante a sessão offline
+    if "war_checklist" not in st.session_state:
+        st.session_state.war_checklist = {
+            "cabos": False, "bateria": False, "garra": False, "programa": False
+        }
+    if "war_anotacoes" not in st.session_state:
+        st.session_state.war_anotacoes = ""
+    
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        st.error("🚨 CHECKLIST PRÉ-ROUND")
+        
+        # Checklists com estado persistente na sessão
+        c1 = st.checkbox("Cabos conectados?", value=st.session_state.war_checklist["cabos"])
+        c2 = st.checkbox("Bateria 100%?", value=st.session_state.war_checklist["bateria"])
+        c3 = st.checkbox("Garra correta inicial?", value=st.session_state.war_checklist["garra"])
+        c4 = st.checkbox("Programa selecionado?", value=st.session_state.war_checklist["programa"])
+        
+        # Atualiza estado
+        st.session_state.war_checklist["cabos"] = c1
+        st.session_state.war_checklist["bateria"] = c2
+        st.session_state.war_checklist["garra"] = c3
+        st.session_state.war_checklist["programa"] = c4
+        
+        if st.button("🔄 Resetar Checklist"):
+            st.session_state.war_checklist = {k: False for k in st.session_state.war_checklist}
+            st.rerun()
+    
+    st.markdown("---")
+    st.subheader("📋 Escalação do Round")
+    c1, c2, c3 = st.columns(3)
+    c1.text_input("Operador 1 (Esq)")
+    c2.text_input("Operador 2 (Dir)")
+    c3.text_input("Técnico de Mesa")
+
+    with col2:
+        st.warning("📅 PRÓXIMO ROUND")
+        st.write("Verifique o horário no telão!")
+        
+        # Anotações persistentes na sessão
+        notas = st.text_area("Anotações rápidas do último round", value=st.session_state.war_anotacoes, height=150)
+        st.session_state.war_anotacoes = notas

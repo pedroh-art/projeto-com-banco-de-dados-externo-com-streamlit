@@ -9,7 +9,9 @@ from models.integrante import (
     atribuir_setor_funcao, listar_atribuicoes, remover_atribuicao,
     remover_integrante_completo, contar_total_integrantes,
     contar_atribuidos_por_funcao, contar_setores_unicos_por_integrante,
-    contar_total_funcoes_por_integrante, listar_logins_membros, resetar_senha_admin
+    contar_total_funcoes_por_integrante, listar_logins_membros, resetar_senha_admin,
+    cadastrar_funcionario_escola, listar_funcionarios_escola, excluir_usuario,
+    atualizar_permissoes_funcionario
 )
 from models.tarefa import (
     criar_tarefa, atualizar_status_tarefa, excluir_tarefa,
@@ -32,10 +34,21 @@ from models.votacao import (
 from models.credencial import (
     criar_credencial, listar_credenciais, excluir_credencial
 )
-from views.shared_components import render_central_de_senhas, render_registro_de_pecas, render_missoes_tapete, render_estrategia_robo, render_biblioteca_codigos, render_projeto_inovacao, render_controle_acompanhamento, render_banco_da_dino_tech, inject_canva_css, get_current_logo
+from models.core_values import listar_atividades_cv, listar_avaliacoes_cv, excluir_atividade_cv, atualizar_atividade_cv, excluir_avaliacao_cv, listar_conflitos_cv, excluir_conflito_cv
+from views.shared_components import render_central_de_senhas, render_registro_de_pecas, render_missoes_tapete, render_estrategia_robo, render_biblioteca_codigos, render_projeto_inovacao, render_controle_acompanhamento, render_banco_da_dino_tech, render_roadmap, render_treino_apresentacao, inject_canva_css, get_current_logo, render_analise_desempenho, render_wiki, render_gestao_riscos, render_treinamento
+from audit import listar_logs, registrar_log, limpar_logs
+from conhecimento import salvar_artigo_wiki
+try:
+    from utils.pdf_generator import gerar_relatorio_completo
+    pdf_gen_error = None
+except ImportError as e:
+    gerar_relatorio_completo = None
+    pdf_gen_error = str(e)
+import pandas as pd
+import json
 from services.regras_service import salvar_regras, criar_regras
 from utils.pushbullet_util import enviar_kanban_pushbullet
-from babel.dates import format_date
+from babel.dates import format_date, format_datetime
 import time
 # Horários padrão
 HORARIOS_PADRAO = [f"{h:02d}:00" for h in range(8, 20)]
@@ -72,6 +85,21 @@ def render_admin_view(conn, regras):
             st.session_state.tipo_usuario = None
             st.rerun()
         st.markdown("---")
+        
+        # --- MODO COMPETIÇÃO (Item 5) ---
+        st.markdown("### 🏆 Controle de Temporada")
+        # Agora lê e salva diretamente nas regras para afetar todos os usuários
+        modo_competicao_atual = regras.get("modo_competicao", False)
+        novo_modo = st.toggle("Modo Competição", value=modo_competicao_atual)
+        if novo_modo != modo_competicao_atual:
+            regras["modo_competicao"] = novo_modo
+            salvar_regras(conn, regras)
+            registrar_log(conn, st.session_state.usuario_logado, "Alterou Modo Competição", f"Ativo: {novo_modo}")
+            st.rerun()
+        
+        if regras.get("modo_competicao"):
+            st.warning("⚠️ O Modo Competição está ATIVO. A visão dos membros está restrita.")
+        st.markdown("---")
 
     logo_src = get_current_logo()
     
@@ -90,8 +118,9 @@ def render_admin_view(conn, regras):
     
     abas_admin = [
         "📂 Setores", "📜 Direitos gerais", "🔑 Direitos por Setor", "📑 Regras gerais",
-        "💡 Por quê", "👥 Membros", "⚙️ Editar regras", "🧩 Projeto de Inovação", "🤖 Robô e Programação", "📊 Kanban", "📅 Compromissos", "📈 Acompanhamento", "🗣️ Reclamações", "📸 Momentos",
-        "🗳️ Votação", "🔑 Central de Senhas", "👤 Usuários e Senhas", "📦 Registro de Peças", "🏦 Banco da Dino-Tech"
+        "💡 Por quê", "👥 Membros", "⚙️ Editar regras", "🧩 Projeto de Inovação", "🤖 Robô e Programação", "🚨 Gestão de Risco", "📚 Wiki", "📊 Kanban", "📅 Compromissos", "📈 Acompanhamento", "🗣️ Reclamações", "📸 Momentos",
+        "🗳️ Votação", "🔑 Central de Senhas", "👤 Usuários e Senhas", "🛡️ Auditoria", "🏫 Acesso Escola", "📦 Registro de Peças", "🏦 Banco da Dino-Tech",
+        "❤️ Core Values", "🗺️ Roadmap", "🎤 Treino Apresentação", "🧑‍🏫 Capacitação", "📊 Relatórios & Pós-Temporada", "💾 Backup"
     ]
     
     st.sidebar.title("Menu Admin")
@@ -194,6 +223,12 @@ def render_admin_view(conn, regras):
                             st.markdown(f"- {d}")
                     else:
                         st.info("Nenhum direito exclusivo definido para este setor.")
+            
+            # Lógica de salvamento automático para edições de texto nesta aba
+            if regras != regras_originais:
+                salvar_regras(conn, regras)
+                registrar_log(conn, st.session_state.usuario_logado, "Editou Direitos por Setor", "Alterações salvas automaticamente")
+                st.toast("💾 Alterações salvas automaticamente!", icon="✅")
 
     # ==============================================================================
     # ABA 4: Regras gerais
@@ -238,6 +273,7 @@ def render_admin_view(conn, regras):
                 else:
                     if cadastrar_integrante(conn, novo_nome):
                         user, pwd = cadastrar_login_membro(conn, novo_nome)
+                        registrar_log(conn, st.session_state.usuario_logado, "Cadastrou Membro", novo_nome)
                         if user:
                             st.toast(f"✅ Integrante '{novo_nome}' cadastrado! Login: **{user}** / Senha: **{pwd}**", icon="✅")
                             print(f"Login criado para {novo_nome} → Usuário: {user} | Senha: {pwd}")
@@ -447,6 +483,7 @@ def render_admin_view(conn, regras):
             # Lógica de salvamento automático
             if regras != regras_originais:
                 salvar_regras(conn, regras)
+                registrar_log(conn, st.session_state.usuario_logado, "Editou Regras", "Alterações salvas automaticamente")
                 st.toast("💾 Alterações feitas foram salvas automaticamente!", icon="✅", duration="short")
                 with st.sidebar:
                     if st.button("💾 Recarregar para aplicar mudanças", key="recarregar_apos_salvar_regras"):
@@ -467,7 +504,7 @@ def render_admin_view(conn, regras):
     if aba_selecionada == "🤖 Robô e Programação":
         with st.container(border=True):
             st.markdown("<h2 style='color:#00BFFF;'>🤖 Robô e Programação</h2>", unsafe_allow_html=True)
-            sub_tab_missoes, sub_tab_estrategia, sub_tab_codigos = st.tabs(["🎯 Missões", "🛠️ Estratégia", "🐍 Códigos"])
+            sub_tab_missoes, sub_tab_estrategia, sub_tab_codigos, sub_tab_metrics = st.tabs(["🎯 Missões", "🛠️ Estratégia", "🐍 Códigos", "📈 Performance"])
             
             with sub_tab_missoes:
                 # Admin tem acesso completo (read_only=False)
@@ -478,6 +515,31 @@ def render_admin_view(conn, regras):
             
             with sub_tab_codigos:
                 render_biblioteca_codigos(conn, read_only=False)
+            
+            with sub_tab_metrics:
+                render_analise_desempenho(conn, st.session_state.usuario_logado, admin=True)
+
+    if aba_selecionada == "🚨 Gestão de Risco":
+        with st.container(border=True):
+            render_gestao_riscos(conn, st.session_state.usuario_logado)
+
+    if aba_selecionada == "📚 Wiki":
+        with st.container(border=True):
+            render_wiki(conn, st.session_state.usuario_logado, admin=True)
+
+    if aba_selecionada == "🧑‍🏫 Capacitação": # Adding Training to Admin
+        with st.container(border=True):
+            admin_id = None
+            try:
+                integrantes = listar_integrantes(conn)
+                login_atual = st.session_state.usuario_logado.lower()
+                for id_, nome in integrantes:
+                    if nome.lower() == login_atual or login_atual in nome.lower().replace(" ", "_"):
+                        admin_id = id_
+                        break
+            except:
+                pass
+            render_treinamento(conn, usuario_id=admin_id, admin=True)
 
     # ==============================================================================
     # ABA 8: Kanban
@@ -741,7 +803,7 @@ def render_admin_view(conn, regras):
                 st.info("Nenhuma foto foi enviada ainda.")
             else:
                 for momento in momentos:
-                    autor = momento.get("integrantes", {}).get("nome", "Equipe")
+                    autor = (momento.get("integrantes") or {}).get("nome", "Equipe")
                     st.image(momento["url_imagem"], caption=f"'{momento['descricao']}'", width=1365)
                     if st.button("🗑️ Excluir esta foto", key=f"del_momento_{momento['id']}", help="Remover esta foto da galeria"):
                         if excluir_momento(conn, momento['id'], momento['url_imagem']):
@@ -893,6 +955,7 @@ def render_admin_view(conn, regras):
                         # Botão para resetar a senha
                         if st.button("🔄 Resetar Senha", key=f"reset_pass_btn_{login['id']}", type="primary", help="Gerar uma nova senha aleatória para este usuário"):
                             nova_senha = resetar_senha_admin(conn, login['id'])
+                            registrar_log(conn, st.session_state.usuario_logado, "Resetou Senha", f"Usuário ID: {login['id']}")
                             if nova_senha:
                                 # Guarda a nova senha em texto para exibir na mensagem de sucesso
                                 st.session_state[f"nova_senha_{login['id']}"] = nova_senha
@@ -905,6 +968,42 @@ def render_admin_view(conn, regras):
                             # Limpa a chave da sessão para não mostrar a mensagem novamente
                             del st.session_state[f"nova_senha_{login['id']}"]
 
+    if aba_selecionada == "🛡️ Auditoria":
+        with st.container(border=True):
+            st.markdown("## 🛡️ Logs de Auditoria")
+            col_info, col_btn = st.columns([0.8, 0.2])
+            with col_info:
+                st.info("Registro de ações críticas no sistema.")
+            with col_btn:
+                if st.button("🗑️ Limpar Tudo", type="primary", help="Apagar todo o histórico de logs"):
+                    if limpar_logs(conn):
+                        st.success("Histórico limpo!")
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error("Erro ao limpar.")
+            
+            logs = listar_logs(conn)
+            if logs:
+                df_logs = pd.DataFrame(logs)
+                
+                # Formatação de data e hora para padrão brasileiro
+                if 'timestamp' in df_logs.columns:
+                    df_logs['timestamp'] = pd.to_datetime(df_logs['timestamp']).dt.strftime('%d/%m/%Y %H:%M')
+
+                # Renomear colunas para exibição amigável
+                mapa_colunas = {
+                    'timestamp': 'Data/Hora', 'usuario': 'Usuário', 
+                    'acao': 'Ação', 'detalhes': 'Detalhes'
+                }
+                df_logs = df_logs.rename(columns=mapa_colunas)
+                
+                # Exibe apenas as colunas relevantes, ocultando IDs e índices
+                cols_finais = [c for c in ['Data/Hora', 'Usuário', 'Ação', 'Detalhes'] if c in df_logs.columns]
+                st.dataframe(df_logs[cols_finais], use_container_width=True, hide_index=True)
+            else:
+                st.info("Nenhum log registrado.")
+
     # ==============================================================================
     # ABA 18: Registro de Peças
     # ==============================================================================
@@ -914,3 +1013,325 @@ def render_admin_view(conn, regras):
     if aba_selecionada == "🏦 Banco da Dino-Tech":
         with st.container(border=True):
             render_banco_da_dino_tech(conn, pode_editar=True)    
+
+    # ==============================================================================
+    # NOVAS ABAS (Solicitadas)
+    # ==============================================================================
+    if aba_selecionada == "❤️ Core Values":
+        with st.container(border=True):
+            st.markdown("## ❤️ Monitoramento de Core Values")
+            tab1, tab2, tab3 = st.tabs(["Atividades Registradas", "Avaliações da Equipe", "🤝 Conflitos Resolvidos"])
+            with tab1:
+                atividades = listar_atividades_cv(conn)
+                if atividades:
+                    integrantes_lista = listar_integrantes(conn)
+                    nomes_integrantes = [nome for _, nome in integrantes_lista]
+                    
+                    for a in atividades:
+                        with st.expander(f"📝 {a['data_atividade']} - {a['atividade']}"):
+                            with st.form(key=f"form_edit_cv_{a['id']}"):
+                                nova_atividade = st.text_input("Atividade", value=a['atividade'])
+                                
+                                try:
+                                    # Garante que pegamos apenas a parte da data (YYYY-MM-DD) mesmo se vier com hora
+                                    d_str = str(a['data_atividade'])
+                                    data_val = datetime.datetime.strptime(d_str[:10], "%Y-%m-%d").date()
+                                except Exception:
+                                    data_val = datetime.date.today()
+                                nova_data = st.date_input("Data", value=data_val, key=f"date_cv_{a['id']}")
+                                
+                                # Tratamento para participantes (garantir que seja lista)
+                                parts = a.get('participantes', [])
+                                if isinstance(parts, str):
+                                    import ast
+                                    try:
+                                        parts = ast.literal_eval(parts)
+                                    except:
+                                        parts = [parts] if parts else []
+                                elif parts is None:
+                                    parts = []
+                                
+                                # Filtra para garantir que os participantes existam na lista atual (para o multiselect não quebrar)
+                                default_parts = [p for p in parts if p in nomes_integrantes]
+                                
+                                novos_participantes = st.multiselect("Participantes", options=nomes_integrantes, default=default_parts)
+                                novo_aprendizado = st.text_area("Aprendizado", value=a['aprendizado'])
+                                
+                                col_save, col_del = st.columns([1, 1])
+                                with col_save:
+                                    if st.form_submit_button("💾 Salvar Alterações"):
+                                        if atualizar_atividade_cv(conn, a['id'], nova_atividade, nova_data, novos_participantes, novo_aprendizado):
+                                            st.success("Atividade atualizada!")
+                                            st.rerun()
+                                        else:
+                                            st.error("Erro ao atualizar.")
+                            
+                            if st.button("🗑️ Excluir Atividade", key=f"del_cv_act_{a['id']}"):
+                                if excluir_atividade_cv(conn, a['id']):
+                                    st.success("Atividade excluída!")
+                                    st.rerun()
+                else:
+                    st.write("Nenhuma atividade registrada.")
+            with tab2:
+                avals = listar_avaliacoes_cv(conn)
+                if avals:
+                    st.markdown("### 📊 Avaliações da Equipe")
+                    
+                    # Mapear IDs para Nomes
+                    integrantes_lista = listar_integrantes(conn)
+                    mapa_nomes = {id_: nome for id_, nome in integrantes_lista}
+
+                    for av in avals:
+                        autor_nome = mapa_nomes.get(av.get('autor_id'), "Membro Desconhecido")
+                        try:
+                            raw_date = av.get('data_registro', '')
+                            if raw_date and isinstance(raw_date, str):
+                                if raw_date.endswith('Z'):
+                                    raw_date = raw_date.replace('Z', '+00:00')
+                                data_obj = datetime.datetime.fromisoformat(raw_date)
+                            else:
+                                data_obj = datetime.datetime.now()
+                            data_fmt = format_datetime(data_obj, "d 'de' MMM 'às' HH:mm", locale='pt_BR')
+                        except Exception:
+                            try:
+                                # Fallback: Tenta limpar a string manualmente se o parser falhar
+                                d_str = str(av.get('data_registro', '')).split('.')[0].replace('T', ' ')
+                                if '+' in d_str: d_str = d_str.split('+')[0]
+                                data_fmt = datetime.datetime.strptime(d_str, "%Y-%m-%d %H:%M:%S").strftime("%d/%m às %H:%M")
+                            except:
+                                data_fmt = str(av.get('data_registro', 'Data inválida'))
+
+                        with st.expander(f"👤 {autor_nome} - {data_fmt}"):
+                            col_metrics1, col_metrics2 = st.columns(2)
+                            
+                            # Função auxiliar para exibir barra de progresso com valor
+                            def show_metric(col, label, value):
+                                with col:
+                                    st.markdown(f"**{label}**: {value}/5")
+                                    st.progress(value / 5)
+
+                            show_metric(col_metrics1, "🔍 Descoberta", av.get('descoberta', 0))
+                            show_metric(col_metrics1, "💡 Inovação", av.get('inovacao', 0))
+                            show_metric(col_metrics1, "🌍 Impacto", av.get('impacto', 0))
+                            
+                            show_metric(col_metrics2, "🤝 Inclusão", av.get('inclusao', 0))
+                            show_metric(col_metrics2, "🐜 Trabalho em Equipe", av.get('trabalho_equipe', 0))
+                            show_metric(col_metrics2, "🎉 Diversão", av.get('diversao', 0))
+                            
+                            st.markdown("---")
+                            if st.button("🗑️ Excluir esta avaliação", key=f"del_cv_aval_{av['id']}"):
+                                if excluir_avaliacao_cv(conn, av['id']):
+                                    st.success("Avaliação excluída!")
+                                    st.rerun()
+                else:
+                    st.info("Nenhuma avaliação registrada ainda.")
+            
+            with tab3:
+                conflitos = listar_conflitos_cv(conn)
+                if conflitos:
+                    st.markdown("### 🕊️ Histórico de Resoluções")
+                    for c in conflitos:
+                        # Formatação robusta de data
+                        try:
+                            raw_date = c.get('data_registro', '')
+                            if raw_date and isinstance(raw_date, str):
+                                if raw_date.endswith('Z'):
+                                    raw_date = raw_date.replace('Z', '+00:00')
+                                data_obj = datetime.datetime.fromisoformat(raw_date)
+                            else:
+                                data_obj = datetime.datetime.now()
+                            data_fmt = format_datetime(data_obj, "d 'de' MMM 'às' HH:mm", locale='pt_BR')
+                        except Exception:
+                            data_fmt = str(c.get('data_registro', 'Data desconhecida'))
+
+                        autor = c.get("integrantes", {}).get("nome", "Desconhecido") if c.get("integrantes") else "Desconhecido"
+
+                        with st.expander(f"⚔️ {c.get('resumo', 'Sem título')} - {data_fmt} ({autor})"):
+                            st.markdown(f"**Solução:**\n{c.get('solucao')}")
+                            st.markdown("---")
+                            if st.button("🗑️ Excluir Registro", key=f"del_conf_{c['id']}"):
+                                if excluir_conflito_cv(conn, c['id']):
+                                    st.success("Conflito excluído!")
+                                    st.rerun()
+                else:
+                    st.info("Nenhum conflito registrado.")
+
+    # ==============================================================================
+    # ABA: ACESSO ESCOLA (NOVA)
+    # ==============================================================================
+    if aba_selecionada == "🏫 Acesso Escola":
+        with st.container(border=True):
+            st.markdown("## 🏫 Gestão de Acesso para Funcionários")
+            st.info("Crie usuários para Coordenadores, Psicólogos ou Direção com acesso restrito apenas ao que você selecionar.")
+
+            opcoes_acesso = [
+                "📊 Kanban e Tarefas",
+                "📅 Cronograma",
+                "💰 Financeiro",
+                "❤️ Core Values",
+                "🤖 Robô e Estratégia",
+                "🧩 Projeto de Inovação",
+                "📄 Relatórios PDF",
+                "📈 Acompanhamento",
+                "🗣️ Reclamações",
+                "📸 Momentos",
+                "🗳️ Votação",
+                "📦 Registro de Peças",
+                "🗺️ Roadmap",
+                "🎤 Treino Apresentação",
+                "📂 Regras e Setores",
+                "📚 Wiki & Conhecimento",
+                "🧑‍🏫 Capacitação",
+                "🚨 Gestão de Risco",
+                "🔑 Central de Senhas"
+            ]
+
+            with st.expander("➕ Cadastrar Novo Funcionário", expanded=True):
+                # Removido st.form para permitir interatividade entre os campos de seleção
+                nome_func = st.text_input("Nome / Cargo (Ex: Coord. Maria)")
+                login_func = st.text_input("Login de Acesso")
+                
+                st.markdown("#### O que este usuário pode ver?")
+                permissoes_escolhidas = st.multiselect("👁️ Permitir VISUALIZAÇÃO em:", options=opcoes_acesso)
+                
+                # Nova seleção para permissões de edição (filtrada pelo que foi selecionado para ver)
+                if permissoes_escolhidas:
+                    permissoes_edicao = st.multiselect("✏️ Permitir EDIÇÃO em:", options=permissoes_escolhidas)
+                else:
+                    permissoes_edicao = []
+
+                if st.button("Criar Usuário", key="btn_criar_func"):
+                    if nome_func and login_func and permissoes_escolhidas:
+                        # Salva como um objeto JSON com view e edit
+                        perms_json = {"view": permissoes_escolhidas, "edit": permissoes_edicao}
+                        
+                        sucesso, msg = cadastrar_funcionario_escola(conn, nome_func, login_func, perms_json)
+                        if sucesso:
+                            st.success(f"✅ Usuário criado! Senha: `{msg}` (Copie agora!)")
+                            # st.rerun() # Removido para que a senha permaneça visível
+                        else:
+                            st.error(f"Erro: {msg}")
+                    else:
+                        st.warning("Preencha todos os campos e selecione pelo menos uma permissão.")
+
+            st.markdown("---")
+            st.subheader("👥 Funcionários Cadastrados")
+            funcs = listar_funcionarios_escola(conn)
+            if funcs:
+                for f in funcs:
+                    perms = f.get("permissoes", [])
+                    # Tratamento visual para exibir o que ele pode ver/editar
+                    if isinstance(perms, dict):
+                        view_list = perms.get("view", [])
+                        edit_list = perms.get("edit", [])
+                    else:
+                        view_list = perms if isinstance(perms, list) else []
+                        edit_list = [] # Legado
+                    
+                    with st.expander(f"👤 {f['usuario']} (ID: {f['id']})"):
+                        st.markdown("#### ✏️ Editar Acessos")
+                        
+                        # Edição de Visualização
+                        new_view = st.multiselect("Visualizar", options=opcoes_acesso, default=[v for v in view_list if v in opcoes_acesso], key=f"edit_view_{f['id']}")
+                        
+                        # Edição de Edição (filtrado pelo que pode ver)
+                        new_edit = st.multiselect("Editar", options=new_view, default=[e for e in edit_list if e in new_view], key=f"edit_edit_{f['id']}")
+                        
+                        col_save, col_del = st.columns([1, 1])
+                        with col_save:
+                            if st.button("💾 Salvar Alterações", key=f"save_perms_{f['id']}"):
+                                perms_json = {"view": new_view, "edit": new_edit}
+                                if atualizar_permissoes_funcionario(conn, f['id'], perms_json):
+                                    st.success("Permissões atualizadas com sucesso!")
+                                    st.rerun()
+                                else:
+                                    st.error("Erro ao atualizar permissões.")
+                        
+                        with col_del:
+                            if st.button("🗑️ Excluir Usuário", key=f"del_func_{f['id']}"):
+                                excluir_usuario(conn, f['id'])
+                                st.success("Usuário removido.")
+                                st.rerun()
+            else:
+                st.info("Nenhum funcionário cadastrado.")
+
+    if aba_selecionada == "🗺️ Roadmap":
+        with st.container(border=True):
+            render_roadmap(conn, admin=True)
+
+    if aba_selecionada == "🎤 Treino Apresentação":
+        with st.container(border=True):
+            render_treino_apresentacao(conn, admin=True)
+
+    if aba_selecionada == "📊 Relatórios & Pós-Temporada":
+        with st.container(border=True):
+            st.markdown("## 📊 Relatórios Gerenciais")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.subheader("Tarefas por Status")
+                tarefas = obter_quadro_kanban(conn)
+                if tarefas:
+                    df_tarefas = pd.DataFrame(tarefas)
+                    st.bar_chart(df_tarefas['status'].value_counts())
+            with col2:
+                st.subheader("Membros")
+                total = contar_total_integrantes(conn)
+                st.metric("Total de Membros", total)
+            
+            st.markdown("---")
+            st.subheader("📄 Exportar Relatório Completo")
+            st.info("Gere um arquivo PDF contendo todas as informações do sistema (Regras, Membros, Kanban, Core Values, etc).")
+            
+            # Botão de download do relatório PDF
+            if gerar_relatorio_completo:
+                pdf_bytes = gerar_relatorio_completo(conn, regras)
+                st.download_button(
+                    label="📥 Baixar Relatório Completo (PDF)",
+                    data=pdf_bytes,
+                    file_name="relatorio_dinotech.pdf",
+                    mime="application/pdf"
+                )
+            else:
+                st.error(f"⚠️ Erro ao carregar gerador de PDF: {pdf_gen_error}")
+                st.info("Se o erro for 'No module named fpdf', verifique se instalou no ambiente correto: `pip install fpdf`")
+            
+            st.markdown("---")
+            st.subheader("🏆 Pós-Temporada")
+            with st.expander("📝 Relatório Final (O que aprendemos?)"):
+                pos_func = st.text_area("O que funcionou muito bem?", height=100, key="pos_func")
+                pos_falha = st.text_area("O que falhou e precisa mudar?", height=100, key="pos_falha")
+                pos_ideias = st.text_area("Ideias para a próxima temporada", height=100, key="pos_ideias")
+                if st.button("Salvar Pós-Mortem"):
+                    conteudo_wiki = f"""
+### ✅ O que funcionou muito bem
+{pos_func}
+
+### ❌ O que falhou e precisa mudar
+{pos_falha}
+
+### 💡 Ideias para a próxima temporada
+{pos_ideias}
+"""
+                    titulo_wiki = f"Pós-Mortem Temporada {datetime.date.today().year}"
+                    if salvar_artigo_wiki(conn, titulo_wiki, conteudo_wiki, "Pós-Temporada", st.session_state.usuario_logado):
+                        st.success("Relatório salvo na Wiki com sucesso!")
+                        registrar_log(conn, st.session_state.usuario_logado, "Criou Relatório Pós-Temporada")
+                    else:
+                        st.error("Erro ao salvar na Wiki.")
+
+    if aba_selecionada == "💾 Backup":
+        with st.container(border=True):
+            st.markdown("## 💾 Backup e Exportação")
+            st.info("Exporte os dados essenciais da equipe em formato PDF (Substituindo JSON).")
+            
+            if gerar_relatorio_completo:
+                pdf_bytes_backup = gerar_relatorio_completo(conn, regras)
+                st.download_button(
+                    label="📥 Baixar Backup Completo (PDF)",
+                    data=pdf_bytes_backup,
+                    file_name="backup_dinotech.pdf",
+                    mime="application/pdf"
+                )
+            else:
+                st.error(f"⚠️ Erro ao carregar gerador de PDF: {pdf_gen_error}")
+                st.info("Se o erro for 'No module named fpdf', verifique se instalou no ambiente correto: `pip install fpdf`")

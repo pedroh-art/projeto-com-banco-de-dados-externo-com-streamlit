@@ -48,15 +48,16 @@ def atualizar_dinheiro_atual(conn, novo_valor):
         return True
     except Exception as e:
         raise e
-def registrar_transacao(conn, tipo, valor, descricao, data_transacao):
+def registrar_transacao(conn, tipo, valor, descricao, data_transacao, item_id=None):
     try:
-        conn.table("transacoes").insert({
+        # item_id é ignorado no insert pois a coluna não existe no banco
+        payload = {
             "tipo": tipo,
             "valor": valor,
             "descricao": descricao,
-            "data_criacao": data_transacao,
-            
-        }).execute()
+            "data_criacao": data_transacao
+        }
+        conn.table("transacoes").insert(payload).execute()
         return True
     except Exception as e:
         raise e

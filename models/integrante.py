@@ -48,7 +48,7 @@ def cadastrar_login_membro(conn, nome):
         
         # Insere o novo usuário
         conn.table("usuarios").insert({"usuario": usuario, "senha": senha_hash.decode('latin1'), "tipo": "membro"}).execute()
-        print(f"✅ Login criado: {usuario} | Senha: {senha}")
+        print(f"✅ Login criado: {usuario}") # Senha removida do log por segurança
         return usuario, senha  # retorna a senha forte gerada
         
     except Exception as e:
@@ -189,3 +189,52 @@ def contar_total_funcoes_por_integrante(conn, integrante_id):
         return res.count
     except Exception as e:
         raise e
+
+# --- FUNÇÕES PARA FUNCIONÁRIOS DA ESCOLA ---
+
+def cadastrar_funcionario_escola(conn, nome, usuario, permissoes):
+    """
+    Cria um usuário do tipo 'funcionario' com permissões específicas (JSON).
+    """
+    try:
+        # Verifica se usuário já existe
+        res = conn.table("usuarios").select("id").eq("usuario", usuario).execute()
+        if res.data:
+            return False, "Usuário já existe."
+
+        senha = gerar_senha_forte(10)
+        senha_hash = bcrypt.hashpw(senha.encode('utf-8'), bcrypt.gensalt())
+
+        conn.table("usuarios").insert({
+            "usuario": usuario,
+            "senha": senha_hash.decode('latin1'),
+            "tipo": "funcionario",
+            "permissoes": permissoes # Salva a lista/JSON de permissões
+        }).execute()
+        
+        return True, senha
+    except Exception as e:
+        print(f"Erro ao cadastrar funcionário: {e}")
+        return False, str(e)
+
+def listar_funcionarios_escola(conn):
+    try:
+        res = conn.table("usuarios").select("*").eq("tipo", "funcionario").execute()
+        return res.data
+    except Exception as e:
+        return []
+
+def excluir_usuario(conn, user_id):
+    try:
+        conn.table("usuarios").delete().eq("id", user_id).execute()
+        return True
+    except Exception:
+        return False
+
+def atualizar_permissoes_funcionario(conn, user_id, novas_permissoes):
+    try:
+        conn.table("usuarios").update({"permissoes": novas_permissoes}).eq("id", user_id).execute()
+        return True
+    except Exception as e:
+        print(f"Erro ao atualizar permissões: {e}")
+        return False

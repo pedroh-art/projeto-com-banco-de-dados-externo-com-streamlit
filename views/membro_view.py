@@ -21,7 +21,16 @@ from models.votacao import (
     listar_votacoes_com_status, registrar_voto, verificar_voto_integrante,
     obter_resultados,
 )
-from views.shared_components import render_central_de_senhas, render_registro_de_pecas, render_missoes_tapete, render_estrategia_robo, render_biblioteca_codigos, render_projeto_inovacao, render_controle_acompanhamento, inject_canva_css, get_current_logo
+from models.core_values import registrar_avaliacao_cv, registrar_atividade_cv, registrar_conflito_cv, listar_conflitos_cv, listar_avaliacoes_cv
+from views.shared_components import render_central_de_senhas, render_registro_de_pecas, render_missoes_tapete, render_estrategia_robo, render_biblioteca_codigos, render_projeto_inovacao, render_controle_acompanhamento, render_roadmap, render_treino_apresentacao, inject_canva_css, get_current_logo, render_analise_desempenho, render_wiki, render_treinamento, render_tela_guerra_torneio, render_gestao_riscos
+from audit import registrar_log
+
+try:
+    from utils.pdf_generator import gerar_relatorio_completo
+    pdf_gen_error = None
+except ImportError as e:
+    gerar_relatorio_completo = None
+    pdf_gen_error = str(e)
 
 def render_membro_view(conn, regras, usuario_logado):
     # Configura o locale para português do Brasil para formatar as datas
@@ -88,27 +97,73 @@ def render_membro_view(conn, regras, usuario_logado):
     is_engenheiro_construcao = any(funcao == 'Engenheiro de Construção' for _, funcao in minhas_atribuicoes)
     is_equipe_pi = any(setor == 'Projeto de Inovação (PI)' for setor, _ in minhas_atribuicoes)
     is_sr_core_values = any(funcao == 'Sr. core values' for _, funcao in minhas_atribuicoes)
+    is_gerente_tempo = any(funcao == 'Gerente de Tempo' for _, funcao in minhas_atribuicoes)
+    is_responsavel_documentacao = any(funcao == 'Responsável pela Documentação' for _, funcao in minhas_atribuicoes)
+    is_treinador_oratoria = any(funcao == 'Treinador de Oratória' for _, funcao in minhas_atribuicoes)
+    is_apresentador = any(funcao == 'Apresentador Principal' for _, funcao in minhas_atribuicoes)
 
-    # Define as abas
-    abas_nomes = [
-        "📜 Meus Setores e Direitos",
-        "📦 Registro de Peças",
-        "🧩 Projeto de Inovação",
-        "🤖 Robô e Programação",
-        "📊 Kanban",
-        "📅 Compromissos",
-        "📈 Acompanhamento",
-        "️🗣️ Enviar Feedback",
-        "📸 Momentos da Equipe",
-        "🗳️ Votações",
-        "🔑 Trocar Senha",
-        "🏦 Banco da Equipe"
-    ]
+    # ==============================================================================
+    # LÓGICA DO MODO COMPETIÇÃO (Item 5)
+    # ==============================================================================
+    # Lê diretamente das regras globais, não da sessão local
+    modo_competicao = regras.get("modo_competicao", False)
+
+    if modo_competicao:
+        # Modo focado: Apenas o essencial para o torneio
+        abas_nomes = [
+            "⚔️ TELA DE GUERRA", # Novo item prioritário
+            "📅 Cronograma Oficial", # Renomeado de Compromissos
+            "🤖 Estratégia e Missões", # Foco no Robô
+            "🧩 Apresentação do PI",
+            "📈 Checklists de Torneio", # Foco no Acompanhamento
+            "📸 Evidências Rápidas" # Upload rápido
+        ]
+        st.sidebar.warning("🏆 MODO COMPETIÇÃO ATIVO")
+    else:
+        # Modo Normal - Todas as abas visíveis, edição restrita
+        abas_nomes = [
+            "📜 Meus Setores e Direitos",
+            "❤️ Core Values",
+            "🗺️ Roadmap",
+            "🎤 Treino Apresentação",
+            "📚 Wiki & Conhecimento",
+            "🧑‍🏫 Capacitação",
+            "📦 Registro de Peças",
+            "🧩 Projeto de Inovação",
+            "🤖 Robô e Programação",
+            "📊 Kanban",
+            "📅 Compromissos",
+            "📈 Acompanhamento",
+            "🚨 Gestão de Risco",
+            "️🗣️ Enviar Feedback",
+            "📸 Momentos e Evidências",
+            "🗳️ Votações",
+            "🔑 Trocar Senha",
+            "🏦 Banco da Equipe"
+        ]
+
     if is_gestor_redes:
         abas_nomes.insert(1, "🔑 Central de Senhas") # Adiciona a aba na segunda posição
 
+    if is_responsavel_documentacao:
+        if "🚨 Gestão de Risco" in abas_nomes:
+            abas_nomes.insert(abas_nomes.index("🚨 Gestão de Risco") + 1, "📊 Relatórios")
+        else:
+            abas_nomes.append("📊 Relatórios")
+
+    # Registra no log quais abas este usuário pode ver (apenas uma vez por sessão)
+    if f"log_abas_{usuario_logado}" not in st.session_state:
+        registrar_log(conn, usuario_logado, "Acesso às Abas", f"Abas liberadas: {', '.join(abas_nomes)}")
+        st.session_state[f"log_abas_{usuario_logado}"] = True
+
     st.sidebar.title("Menu")
     aba_selecionada = st.sidebar.radio("Navegação", abas_nomes, label_visibility="collapsed")
+
+    # ==============================================================================
+    # ABA: TELA DE GUERRA (TORNEIO)
+    # ==============================================================================
+    if aba_selecionada == "⚔️ TELA DE GUERRA":
+        render_tela_guerra_torneio(conn)
 
     # ==============================================================================
     # ABA 1: MEUS SETORES, FUNÇÕES, RESPONSABILIDADES E DIREITOS EXCLUSIVOS
@@ -167,11 +222,187 @@ def render_membro_view(conn, regras, usuario_logado):
                 st.info("Você ainda não foi atribuído a nenhum setor ou função.")
 
     # ==============================================================================
+    # ABA: CORE VALUES (Item 1)
+    # ==============================================================================
+    if aba_selecionada == "❤️ Core Values":
+        with st.container(border=True):
+            st.markdown("<h2 style='color:#FF4500;'>❤️ Core Values & Cultura</h2>", unsafe_allow_html=True)
+            
+            tab_aval, tab_log, tab_conflito = st.tabs(["📊 Autoavaliação", "📝 Diário de Bordo", "🤝 Resolução de Conflitos"])
+            
+            with tab_aval:
+                st.subheader("Como estamos hoje?")
+                st.caption("Avalie a equipe de 1 a 5 em cada pilar.")
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    descoberta = st.slider("🔍 Descoberta", 1, 5, 3, help="Exploramos novas habilidades e ideias?")
+                    inovacao = st.slider("💡 Inovação", 1, 5, 3, help="Usamos criatividade e persistência?")
+                    impacto = st.slider("🌍 Impacto", 1, 5, 3, help="Aplicamos o que aprendemos para melhorar o mundo?")
+                with col2:
+                    inclusao = st.slider("🤝 Inclusão", 1, 5, 3, help="Respeitamos e aceitamos as diferenças?")
+                    trabalho_equipe = st.slider("🐜 Trabalho em Equipe", 1, 5, 3, help="Trabalhamos juntos de forma eficiente?")
+                    diversao = st.slider("🎉 Diversão", 1, 5, 3, help="Celebramos e nos divertimos?")
+                
+                if st.button("💾 Salvar Avaliação"):
+                    dados = {
+                        "descoberta": descoberta, "inovacao": inovacao, 
+                        "impacto": impacto, "inclusao": inclusao, 
+                        "trabalho_equipe": trabalho_equipe, "diversao": diversao
+                    }
+                    if registrar_avaliacao_cv(conn, dados, meu_id):
+                        st.success("Avaliação registrada!")
+                    else:
+                        st.error("Erro ao salvar.")
+                
+                # Painel de ADM na Autoavaliação para Sr. Core Values
+                if is_sr_core_values:
+                    st.markdown("---")
+                    st.markdown("### 📊 Visão Geral (Sr. Core Values)")
+                    avals = listar_avaliacoes_cv(conn)
+                    if avals:
+                        for av in avals:
+                            # Tenta obter nome do autor se disponível no objeto ou exibe ID
+                            autor_display = av.get('autor_id', 'Anônimo')
+                            # Se houver join com integrantes no model, poderia usar av.get('integrantes', {}).get('nome')
+                            
+                            with st.expander(f"Avaliação de {autor_display} - {av.get('data_registro', '')}"):
+                                c1, c2 = st.columns(2)
+                                with c1:
+                                    st.write(f"🔍 Descoberta: {av.get('descoberta')}")
+                                    st.write(f"💡 Inovação: {av.get('inovacao')}")
+                                    st.write(f"🌍 Impacto: {av.get('impacto')}")
+                                with c2:
+                                    st.write(f"🤝 Inclusão: {av.get('inclusao')}")
+                                    st.write(f"🐜 Equipe: {av.get('trabalho_equipe')}")
+                                    st.write(f"🎉 Diversão: {av.get('diversao')}")
+                    else:
+                        st.info("Nenhuma avaliação registrada ainda.")
+
+            
+            with tab_log:
+                st.subheader("Registro de Atividades de Core Values")
+                with st.form("log_cv"):
+                    atividade = st.text_input("O que fizemos?", placeholder="Ex: Dinâmica de integração, Ajuda a outra equipe...")
+                    
+                    # Opção para usar data/hora atual ou manual
+                    usar_atual = st.checkbox("Usar data e hora atual?", value=True)
+                    
+                    if usar_atual:
+                        agora = datetime.datetime.now()
+                        data_cv = agora.date()
+                        hora_str = agora.strftime("%H:%M")
+                        st.caption(f"📅 Registrando para: {data_cv.strftime('%d/%m/%Y')} às {hora_str}")
+                    else:
+                        col_d, col_h = st.columns(2)
+                        data_cv = col_d.date_input("Data", value=datetime.date.today())
+                        hora_input = col_h.time_input("Hora", value=datetime.datetime.now().time())
+                        hora_str = hora_input.strftime("%H:%M")
+
+                    participantes_cv = st.multiselect("Quem participou?", [nome for _, nome in listar_integrantes(conn)])
+                    aprendizado = st.text_area("O que aprendemos com isso?")
+                    if st.form_submit_button("Registrar Atividade"):
+                        # Inclui a hora no texto da atividade para ficar registrado
+                        atividade_final = f"[{hora_str}] {atividade}"
+                        if registrar_atividade_cv(conn, atividade_final, data_cv, participantes_cv, aprendizado, meu_id):
+                            st.success("✅ Atividade registrada no histórico!")
+                        else:
+                            st.error("Erro ao registrar.")
+            
+            with tab_conflito:
+                st.subheader("Histórico e Resolução")
+                st.info("Conflitos são normais. O importante é como resolvemos.")
+                
+                if is_sr_core_values:
+                    with st.form("form_conflito_cv", clear_on_submit=True):
+                        st.markdown("### 📝 Registrar Resolução")
+                        resumo_conflito = st.text_input("Resumo do conflito", placeholder="Ex: Divergência sobre a estratégia do robô")
+                        solucao_conflito = st.text_area("Como foi resolvido? (Solução construtiva)", placeholder="Ex: Fizemos uma votação e testamos as duas ideias...")
+                        
+                        if st.form_submit_button("💾 Arquivar Resolução"):
+                            if resumo_conflito.strip() and solucao_conflito.strip():
+                                if registrar_conflito_cv(conn, resumo_conflito, solucao_conflito, meu_id):
+                                    st.success("✅ Resolução de conflito registrada com sucesso!")
+                                    st.rerun()
+                                else:
+                                    st.error("❌ Erro ao registrar. Verifique se a tabela 'core_values_conflitos' existe no banco.")
+                            else:
+                                st.warning("⚠️ Preencha todos os campos.")
+                else:
+                    st.warning("🔒 Apenas o Sr. Core Values pode registrar resoluções de conflitos.")
+
+                st.markdown("---")
+                st.markdown("### 🕊️ Histórico de Resoluções")
+                conflitos = listar_conflitos_cv(conn)
+                if conflitos:
+                    for c in conflitos:
+                        with st.expander(f"⚔️ {c.get('resumo', 'Sem título')}"):
+                            st.markdown(f"**Solução:**\n{c.get('solucao')}")
+                            st.caption(f"Registrado em: {c.get('data_registro')}")
+                else:
+                    st.info("Nenhum conflito registrado ainda.")
+
+    # ==============================================================================
+    # ABA MODO COMPETIÇÃO: ESTRATÉGIA E MISSÕES
+    # ==============================================================================
+    if aba_selecionada == "🤖 Estratégia e Missões":
+        with st.container(border=True):
+            st.markdown("## 🤖 Foco Total: Robô")
+            render_missoes_tapete(conn, read_only=True) # Apenas leitura no torneio para evitar acidentes
+            st.markdown("---")
+            render_estrategia_robo(conn, read_only=True)
+
+    if aba_selecionada == "🧩 Apresentação do PI":
+        with st.container(border=True):
+            st.markdown("## 🧩 Foco Total: Inovação")
+            render_projeto_inovacao(conn, read_only=True)
+
+    # ==============================================================================
+    # NOVAS ABAS DE MEMBRO
+    # ==============================================================================
+    if aba_selecionada == "🗺️ Roadmap":
+        with st.container(border=True):
+            render_roadmap(conn, admin=is_gerente_tempo)
+
+    if aba_selecionada == "🎤 Treino Apresentação":
+        with st.container(border=True):
+            render_treino_apresentacao(conn, admin=is_treinador_oratoria)
+
+    if aba_selecionada == "📚 Wiki & Conhecimento":
+        with st.container(border=True):
+            render_wiki(conn, usuario_logado)
+
+    if aba_selecionada == "🧑‍🏫 Capacitação":
+        with st.container(border=True):
+            render_treinamento(conn, usuario_id=meu_id)
+
+    # ==============================================================================
     # ABA EXTRA: Central de Senhas (se for gestor)
     # ==============================================================================
     if is_gestor_redes and aba_selecionada == "🔑 Central de Senhas":
         with st.container(border=True):
             render_central_de_senhas(conn)
+            
+    if aba_selecionada == "🚨 Gestão de Risco":
+        with st.container(border=True):
+            can_edit_riscos = is_analista_missoes or is_gerente_tempo
+            render_gestao_riscos(conn, usuario_logado, read_only=not can_edit_riscos)
+            
+    if aba_selecionada == "📊 Relatórios":
+        with st.container(border=True):
+            st.markdown("## 📊 Relatórios da Equipe")
+            st.info("Gere o relatório completo da equipe em PDF.")
+            
+            if gerar_relatorio_completo:
+                pdf_bytes = gerar_relatorio_completo(conn, regras)
+                st.download_button(
+                    label="📥 Baixar Relatório Completo (PDF)",
+                    data=pdf_bytes,
+                    file_name="relatorio_dinotech.pdf",
+                    mime="application/pdf"
+                )
+            else:
+                st.error(f"⚠️ Erro ao carregar gerador de PDF: {pdf_gen_error}")
 
     # ==============================================================================
     # ABA: REGISTRO DE PEÇAS
@@ -187,7 +418,7 @@ def render_membro_view(conn, regras, usuario_logado):
     if aba_selecionada == "🧩 Projeto de Inovação":
         with st.container(border=True):
             # Permite edição para qualquer membro do setor de PI
-            render_projeto_inovacao(conn, read_only=not is_equipe_pi)
+            render_projeto_inovacao(conn, read_only=not is_equipe_pi, usuario_id=meu_id)
 
 
     # ==============================================================================
@@ -196,7 +427,7 @@ def render_membro_view(conn, regras, usuario_logado):
     if aba_selecionada == "🤖 Robô e Programação":
         with st.container(border=True):
             st.markdown("<h2 style='color:#00BFFF;'>🤖 Robô e Programação</h2>", unsafe_allow_html=True)
-            sub_tab_missoes, sub_tab_estrategia, sub_tab_codigos = st.tabs(["🎯 Missões", "🛠️ Estratégia", "🐍 Códigos"])
+            sub_tab_missoes, sub_tab_estrategia, sub_tab_codigos, sub_tab_metrics = st.tabs(["🎯 Missões", "🛠️ Estratégia", "🐍 Códigos", "📈 Performance"])
             
             with sub_tab_missoes:
                 render_missoes_tapete(conn, read_only=not is_analista_missoes)
@@ -206,17 +437,18 @@ def render_membro_view(conn, regras, usuario_logado):
             
             with sub_tab_codigos:
                 render_biblioteca_codigos(conn, read_only=not is_programador_robo)
+            
+            with sub_tab_metrics:
+                render_analise_desempenho(conn, usuario_logado)
 
     # ==============================================================================
     # ABA: KANBAN
     # ==============================================================================
-    if aba_selecionada == "📊 Kanban":
+    if aba_selecionada == "📊 Kanban" or aba_selecionada == "📅 Cronograma Oficial": # Reuso para modo competição
         with st.container(border=True):
             st.markdown("<h2 style='color:#4B0082;'>📊 Quadro Kanban</h2>", unsafe_allow_html=True)
-            # Verifica se o membro é 'Gerente de Tempo' para dar permissão de edição
-            is_gerente_de_tempo = any(funcao == 'Gerente de Tempo' for _, funcao in minhas_atribuicoes)
 
-            if is_gerente_de_tempo:
+            if is_gerente_tempo:
                 st.subheader("➕ Nova Tarefa")
                 integrantes_lista = listar_integrantes(conn)
                 nomes_dict = {nome: id for id, nome in integrantes_lista}
@@ -224,8 +456,7 @@ def render_membro_view(conn, regras, usuario_logado):
                 desc_tarefa = st.text_area("Descrição (opcional)", key="kanban_desc")
                 responsaveis = st.multiselect(
                     "Responsáveis",
-                    list(nomes_dict.keys()),
-                    key="kanban_resp"
+                    list(nomes_dict.keys())
                 )
                 if st.button("Criar Tarefa", key="kanban_criar"):
                     if not titulo_tarefa.strip():
@@ -260,7 +491,7 @@ def render_membro_view(conn, regras, usuario_logado):
                                 if desc:
                                     st.write(desc)
                                 
-                                if is_gerente_de_tempo:
+                                if is_gerente_tempo:
                                     col_btn1, col_btn2, col_btn3, col_btn4 = st.columns(4)
                                     if status != "to_do":
                                         with col_btn1:
@@ -288,7 +519,7 @@ def render_membro_view(conn, regras, usuario_logado):
                                             if excluir_tarefa(conn, t_id):
                                                 st.success("✅ Tarefa excluída!")
                                                 st.rerun()
-            if is_gerente_de_tempo:
+            if is_gerente_tempo:
                 st.markdown("---")
                 st.subheader("📤 Enviar Quadro via Pushbullet")
                 st.link_button("Pegue seu token aqui", "https://www.pushbullet.com/#settings/account", icon="🔗")
@@ -307,11 +538,10 @@ def render_membro_view(conn, regras, usuario_logado):
     # ==============================================================================
     # ABA: COMPROMISSOS
     # ==============================================================================
-    if aba_selecionada == "📅 Compromissos":
+    if aba_selecionada == "📅 Compromissos" or aba_selecionada == "📅 Cronograma Oficial":
         with st.container(border=True):
-            is_gerente_de_tempo = any(funcao == 'Gerente de Tempo' for _, funcao in minhas_atribuicoes)
 
-            if is_gerente_de_tempo:
+            if is_gerente_tempo:
                 st.markdown("<h2 style='color:#2E8B57;'>📅 Gerenciar Compromissos da Equipe</h2>", unsafe_allow_html=True)
             else:
                 st.markdown("<h2 style='color:#2E8B57;'>📅 Compromissos Oficiais da Equipe</h2>", unsafe_allow_html=True)
@@ -324,14 +554,14 @@ def render_membro_view(conn, regras, usuario_logado):
                 
                 for data_str in sorted(comp_por_data.keys()):
                     data_obj = datetime.datetime.strptime(data_str, "%Y-%m-%d")
-                    data_formatada = format_date(data_obj.date(), "d 'de' MMMM 'de' y", locale='pt_BR')
+                    data_formatada = format_date(data_obj, "d 'de' MMMM 'de' y", locale='pt_BR')
                     st.markdown(f"### 🗓️ {data_formatada}")
                     for cid, titulo, desc, inicio, fim in comp_por_data[data_str]:
                         with st.expander(f"📌 **{titulo}** — {inicio} a {fim}"):
                             if desc:
                                 st.write(desc)
                             
-                            if is_gerente_de_tempo:
+                            if is_gerente_tempo:
                                 col1, col2 = st.columns([1, 1])
                                 with col1:
                                     if st.button("✏️ Editar", key=f"edit_{cid}", help="Editar este compromisso"):
@@ -345,7 +575,7 @@ def render_membro_view(conn, regras, usuario_logado):
             else:
                 st.info("Nenhum compromisso oficial agendado ainda.")
 
-            if is_gerente_de_tempo:
+            if is_gerente_tempo:
                 st.markdown("---")
                 st.subheader("➕ Adicionar ou Editar Compromisso")
                 
@@ -414,26 +644,25 @@ def render_membro_view(conn, regras, usuario_logado):
     # ==============================================================================
     # ABA: ACOMPANHAMENTO
     # ==============================================================================
-    if aba_selecionada == "📈 Acompanhamento":
+    if aba_selecionada == "📈 Acompanhamento" or aba_selecionada == "📈 Checklists de Torneio":
         with st.container(border=True):
-            # Define permissões granulares
-            is_gerente_de_tempo = any(funcao == 'Gerente de Tempo' for _, funcao in minhas_atribuicoes)
             
             render_controle_acompanhamento(
                 conn,
-                can_edit_checklist=(is_gerente_de_tempo or is_responsavel_materiais),
-                can_edit_reunioes=is_gerente_de_tempo,
-                can_edit_erros=is_gerente_de_tempo,
+                can_edit_checklist=(is_gerente_tempo or is_responsavel_materiais),
+                can_edit_reunioes=is_gerente_tempo,
+                can_edit_erros=is_gerente_tempo,
             )
 
     # ==============================================================================
     # ABA: ENVIAR FEEDBACK
     # ==============================================================================
     if aba_selecionada == "️🗣️ Enviar Feedback":
-        with st.container(border=True):
+       with st.container(border=True):
+            # Sr. Core Values vê o gerenciamento E o formulário de envio
             if is_sr_core_values:
                 st.markdown("<h2 style='color:#FF6347;'>🗣️ Gerenciar Caixa de Feedback</h2>", unsafe_allow_html=True)
-                st.info("Como 'Sr. core values', você pode visualizar e gerenciar os feedbacks enviados pela equipe.")
+                st.info("Como 'Sr. core values', você pode visualizar, gerenciar e também enviar feedbacks.")
 
                 reclamacoes = listar_reclamacoes(conn)
 
@@ -478,51 +707,60 @@ def render_membro_view(conn, regras, usuario_logado):
                             if st.button("🗑️ Excluir", key=f"del_rec_lida_{rec['id']}", help="Apagar esta reclamação"):
                                 excluir_reclamacao(conn, rec['id'])
                                 st.rerun()
-            else:
-                st.markdown("<h2 style='color:#FF6347;'>🗣️ Caixa de Feedback e Reclamações</h2>", unsafe_allow_html=True)
-                st.info("Use este espaço com responsabilidade para nos ajudar a melhorar. Você pode escolher se identificar ou enviar a mensagem anonimamente.")
                 
-                texto_reclamacao = st.text_area(
-                    "Escreva sua reclamação ou sugestão aqui. Seja claro e objetivo.",
-                    height=200,
-                    key="texto_reclamacao"
-                )
-                
-                enviar_anonimamente = st.checkbox("Quero enviar esta mensagem anonimamente", value=True, key="anonimo_check")
-                
-                if st.button("✉️ Enviar Mensagem", key="btn_enviar_reclamacao"):
-                    if texto_reclamacao.strip():
-                        # Se a caixa de anônimo estiver marcada, o ID enviado é None
-                        id_do_autor = None if enviar_anonimamente else meu_id
-                        
-                        if criar_reclamacao(conn, texto_reclamacao, id_do_autor):
-                            mensagem_sucesso = "Sua mensagem foi enviada com sucesso!"
-                            st.toast(f"✅ {mensagem_sucesso}", icon="😁")
-                            time.sleep(2) # Aguarda 2 segundos para o usuário ler a mensagem
-                            st.rerun() # Recarrega a página, limpando o campo de texto
-                        else:
-                            st.error("❌ Ocorreu um erro ao enviar sua reclamação. Tente novamente.")
+                st.markdown("---")
+            
+            # Formulário de envio (Visível para todos, inclusive Sr. Core Values agora)
+            st.markdown("<h2 style='color:#FF6347;'>✉️ Enviar Novo Feedback</h2>", unsafe_allow_html=True)
+            
+            st.info("Use este espaço com responsabilidade para nos ajudar a melhorar. Você pode escolher se identificar ou enviar a mensagem anonimamente.")
+            
+            texto_reclamacao = st.text_area(
+                "Escreva sua reclamação ou sugestão aqui. Seja claro e objetivo.",
+                height=200,
+                key="texto_reclamacao"
+            )
+            
+            enviar_anonimamente = st.checkbox("Quero enviar esta mensagem anonimamente", value=True, key="anonimo_check")
+            
+            if st.button("✉️ Enviar Mensagem", key="btn_enviar_reclamacao"):
+                if texto_reclamacao.strip():
+                    # Se a caixa de anônimo estiver marcada, o ID enviado é None
+                    id_do_autor = None if enviar_anonimamente else meu_id
+                    
+                    if criar_reclamacao(conn, texto_reclamacao, id_do_autor):
+                        mensagem_sucesso = "Sua mensagem foi enviada com sucesso!"
+                        st.toast(f"✅ {mensagem_sucesso}", icon="😁")
+                        time.sleep(2) # Aguarda 2 segundos para o usuário ler a mensagem
+                        st.rerun() # Recarrega a página, limpando o campo de texto
                     else:
-                        st.warning("⚠️ O campo de texto não pode estar vazio.")
+                        st.error("❌ Ocorreu um erro ao enviar sua reclamação. Tente novamente.")
+                else:
+                    st.warning("⚠️ O campo de texto não pode estar vazio.")
 
-    if aba_selecionada == "📸 Momentos da Equipe":
+    # ==============================================================================
+    # ABA: MOMENTOS E EVIDÊNCIAS (Item 2)
+    # ==============================================================================
+    if aba_selecionada == "📸 Momentos da Equipe" or aba_selecionada == "📸 Momentos e Evidências" or aba_selecionada == "📸 Evidências Rápidas":
         with st.container(border=True):
-            st.markdown("<h2 style='color:#8A2BE2;'>📸 Momentos da Equipe</h2>", unsafe_allow_html=True)
+            st.markdown("<h2 style='color:#8A2BE2;'>📸 Evidências e Momentos</h2>", unsafe_allow_html=True)
             
             with st.form("upload_momento_form", clear_on_submit=True):
                 st.subheader("📤 Envie uma foto de um momento especial")
                 descricao_momento = st.text_input("Qual foi o momento? (Ex: Dia do campeonato, treino de sábado)")
+                tag_evidencia = st.selectbox("Categoria (Tag)", ["Geral", "🤖 Robô", "🧩 Projeto de Inovação", "❤️ Core Values", "🏆 Torneio"])
                 foto_momento = st.file_uploader("Selecione a foto", type=["jpg", "jpeg", "png"])
                 
                 submitted = st.form_submit_button("✨ Enviar Momento")
                 if submitted:
                     if foto_momento and descricao_momento.strip():
-                        with st.spinner("Enviando foto..."):
-                            if upload_momento(conn, foto_momento, descricao_momento, meu_id):
-                                st.success("✅ Foto enviada com sucesso!")
-                                st.rerun()
-                            else:
-                                st.error("❌ Erro ao enviar a foto. Tente novamente.")
+                        # Hack para salvar a tag junto com a descrição sem mudar o banco de dados
+                        descricao_momento = f"[{tag_evidencia}] {descricao_momento}"
+                        if upload_momento(conn, foto_momento, descricao_momento, meu_id):
+                            st.success("✅ Foto enviada com sucesso!")
+                            st.rerun()
+                        else:
+                            st.error("Erro ao enviar foto.")
                     else:
                         st.warning("⚠️ Por favor, adicione uma descrição e uma foto.")
 
@@ -536,7 +774,7 @@ def render_membro_view(conn, regras, usuario_logado):
                 st.info("Nenhuma foto foi enviada ainda.")
             else:
                 for momento in momentos:
-                    autor = momento.get("integrantes", {}).get("nome", "Equipe")
+                    autor = (momento.get("integrantes") or {}).get("nome", "Equipe")
                     st.image(momento["url_imagem"], caption=f"'{momento['descricao']}' por {autor}", width=1365)
 
                     col1, col2 = st.columns([1, 5])
@@ -650,4 +888,4 @@ def render_membro_view(conn, regras, usuario_logado):
             st.markdown("<h2 style='color:#20B2AA;'>🏦 Banco da Equipe</h2>", unsafe_allow_html=True)
             # Componente do banco da equipe
             from views.shared_components import render_banco_da_dino_tech
-            render_banco_da_dino_tech(conn)
+            render_banco_da_dino_tech(conn, pode_editar=is_responsavel_materiais)
